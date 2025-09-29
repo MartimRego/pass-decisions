@@ -1,0 +1,16 @@
+# Ignore data directories
+RealMadrid_data/
+PremierLeague_data/
+
+# Ignore other large or private files
+*.parquet
+*.json
+*.csv
+
+# Ignore Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
