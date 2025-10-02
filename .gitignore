@@ -1,3 +1,14 @@
+#Ignore venv files
+.venv/*
+.idea/*
+__pycache__/
+Lib/*
+Scripts/*
+pyvenv.cfg
+Scripts/*
+Include/*
+share/*
+
 # Ignore data directories
 RealMadrid_data/
 PremierLeague_data/
@@ -14,3 +25,7 @@ __pycache__/
 
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+
+#Ignore ssh keys
+deep_learning_readonly_key
+deep_learning_readonly_key.pub

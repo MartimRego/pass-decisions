@@ -19,8 +19,9 @@ import streamlit as st
 import pandas as pd
 import json
 from mplsoccer import Pitch
+from settings import DATA_DIR
 
-DATA_FOLDER = "RealMadrid"  # Change this to the path where your data is stored
+DATA_FOLDER = f"{DATA_DIR}/RealMadrid"
 
 st.title("SkillCorner Dynamic Events - Passing Exploration")
 

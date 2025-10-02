@@ -10,9 +10,10 @@ of the events in the dynamic events
 import json
 import pandas as pd
 import os
+from settings import DATA_DIR
 
 #Set the data path to the JSONL file. Needs to be specified from the root of all repositories
-data_path = "RealMadrid"
+data_path = f"{DATA_DIR}/RealMadrid"
 df_matches = pd.read_parquet(f"{data_path}/matches.parquet")
 
 if not os.path.exists(f"{data_path}/freeze"):
