@@ -15,12 +15,17 @@ from settings import DATA_DIR
 #Set the data path to the JSONL file. Needs to be specified from the root of all repositories
 data_path = f"{DATA_DIR}/RealMadrid"
 df_matches = pd.read_parquet(f"{data_path}/matches.parquet")
+print(f"Number of matches: {len(df_matches)}")
 
 if not os.path.exists(f"{data_path}/freeze"):
     os.makedirs(f"{data_path}/freeze")
 
 #match_id = df_matches['id'].values[0]
 for match_id in df_matches['id'].values:
+    if os.path.exists(f"{data_path}/freeze/{match_id}.parquet"):
+        print(f"Freeze frames already exist for match {match_id}")
+        continue
+
     try:
         df_events = pd.read_parquet(f"{data_path}/dynamic/{match_id}.parquet")
     except:
@@ -74,4 +79,5 @@ for match_id in df_matches['id'].values:
     
     # Save as freeze frames 
     df_frames.to_parquet(f"{data_path}/freeze/{match_id}.parquet")
+    print(f"Freeze frames saved for match {match_id}")
 
