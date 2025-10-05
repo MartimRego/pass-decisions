@@ -12,6 +12,11 @@ share/*
 # Ignore data directories
 RealMadrid_data/
 PremierLeague_data/
+Module_2/processed_formations/
+Module_2/processed_formations1/
+Module_2/processed_tracking/
+Module_2/processed_tracking1/
+Module_2/role_heatmaps/
 
 # Ignore other large or private files
 *.parquet
