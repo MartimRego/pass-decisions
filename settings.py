@@ -1,1 +1,1 @@
-DATA_DIR = "SET YOUR DATA DIRECTORY HERE"
+DATA_DIR = "'/Users/pegra441/Desktop/twelve-deep-learning/"

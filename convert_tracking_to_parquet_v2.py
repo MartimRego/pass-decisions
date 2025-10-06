@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Convert tracking JSONs to individual parquet files per match.
+Aggregate all tracking JSONs into one parquet file.
 
 Author: Pegah & Gustimorth
 """
@@ -13,11 +13,10 @@ from pathlib import Path
 # --------------------------------------------------------------------------
 # CONFIG
 # --------------------------------------------------------------------------
-BASE_DIR = Path("/Users/pegra441/Desktop/twelve-deep-learning")
+BASE_DIR = Path.cwd()
 REALMADRID_DIR = BASE_DIR / "RealMadrid"
 TRACKING_DIR = REALMADRID_DIR / "tracking"
-OUTPUT_DIR = REALMADRID_DIR / "tracking_parquets"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)  # create folder if missing
+OUTPUT_FILE = BASE_DIR / "tracking_raw.parquet"
 
 # --------------------------------------------------------------------------
 # LOADER FUNCTION
@@ -83,25 +82,25 @@ if __name__ == "__main__":
     df_matches = pd.read_parquet(matches_path)
     print(f"Found {len(df_matches)} matches")
 
+    all_dfs = []
     for match_id in df_matches["id"].values:
-        output_file = OUTPUT_DIR / f"{match_id}.parquet"
-
-        # Skip existing files
-        if output_file.exists():
-            print(f"⏭️ {output_file.name} already exists, skipping")
-            continue
-
         try:
             df_tracking = load_tracking_full(match_id)
             if df_tracking is None or df_tracking.empty:
                 print(f"⚠️ Empty tracking for {match_id}, skipping")
                 continue
-
-            df_tracking.to_parquet(output_file)
-            print(f"✅ Saved {output_file.name} ({len(df_tracking)} rows)")
+            all_dfs.append(df_tracking)
+            print(f"✅ Loaded match {match_id} ({len(df_tracking)} rows)")
         except FileNotFoundError:
-            print(f"⚠️ No tracking JSON for match {match_id}")
+            print(f"⚠️ No tracking for match {match_id}")
         except Exception as e:
-            print(f"❌ Error processing match {match_id}: {e}")
+            print(f"❌ Error with match {match_id}: {e}")
 
-    print(f"\n🎯 Done! Parquet files saved to: {OUTPUT_DIR}")
+    # Concatenate all and save
+    if len(all_dfs) == 0:
+        print("⚠️ No tracking data found — nothing to save.")
+    else:
+        df_all = pd.concat(all_dfs, ignore_index=True)
+        df_all.to_parquet(OUTPUT_FILE)
+        print(f"✅ Saved combined tracking data to {OUTPUT_FILE}")
+        print(f"   Total rows: {len(df_all):,}")
