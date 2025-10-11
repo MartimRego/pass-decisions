@@ -18,8 +18,8 @@
 - This is a deep learning project focused on football/soccer analytics
 - We're following a course on deep learning applications in soccer
 - This repository contains datasets, notebooks, and scripts related to the course
-- Due to RAM limitations, we want to rewrite code to use Polars instead of Pandas
-- We want to migrate to polars while keeping the same functionality
+- Keep in mind that the available RAM is limited to 16GB
+- We want to solve the exercise notebooks step-by-step
 - Working with tracking data, physical data, and match metadata
 - Data sources include Premier League and Real Madrid datasets
 - Common tasks involve data processing, visualization, and clustering analysis
@@ -31,9 +31,8 @@
 - When suggesting ML models, explain the reasoning behind the choice
 - Always handle missing data gracefully
 - Include error handling in data processing code
-- Always consult the original notebook for context before making changes
-- When rewriting code, ensure the new code is functionally equivalent to the original
-- Never make changes to the original notebook without explicit instructions
+- Always consult the tracking_basics.ipynb notebook for foundational concepts
+
 
 ## File Organization
 - Keep notebooks clean with clear markdown sections
@@ -59,3 +58,4 @@
 - Don't use deprecated pandas methods (e.g., append, use concat instead)
 - Avoid hardcoded paths; use pathlib or os.path
 - Don't ignore data validation and sanity checks
+- Don't delete existing markdown explanations in notebooks
