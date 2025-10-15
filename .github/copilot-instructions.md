@@ -34,6 +34,8 @@
 - Always consult the original notebook for context before making changes
 - When rewriting code, ensure the new code is functionally equivalent to the original
 - Never make changes to the original notebook without explicit instructions
+- Consider implementing Dask for parallel processing if it helps with saving RAM
+- Always be mindful of RAM limitations when suggesting code changes
 
 ## File Organization
 - Keep notebooks clean with clear markdown sections
