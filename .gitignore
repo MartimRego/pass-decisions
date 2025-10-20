@@ -34,3 +34,5 @@ __pycache__/
 #Ignore ssh keys
 deep_learning_readonly_key
 deep_learning_readonly_key.pub
+
+venv_graph/
