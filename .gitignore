@@ -9,9 +9,11 @@ Scripts/*
 Include/*
 share/*
 
-# Ignore data directories
+# Ignore data directories (now symlinks to parent directory)
+RealMadrid
 RealMadrid_data/
-PremierLeague_data/
+PremierLeague_data
+pyg_datasets
 Module_2/processed_formations/
 Module_2/processed_formations1/
 Module_2/processed_tracking/
