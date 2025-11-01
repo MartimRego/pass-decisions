@@ -14,16 +14,19 @@ import pandas as pd
 from typing import Tuple, Dict, Optional
 
 
-# Action space definition (9 total actions)
+# Action space definition (9 total actions: 8 pass types + shoot)
+# Pass length thresholds: short ≤10m, medium 10-25m, long >25m
+# Pass direction thresholds: forward/backward >5m, lateral ≤5m
+# Note: long_lateral merged into medium_lateral (too rare)
 ACTION_NAMES = {
-    0: 'short_forward',
+    0: 'short_backward',
     1: 'short_lateral',
-    2: 'short_backward',
-    3: 'medium_forward',
-    4: 'medium_lateral',
-    5: 'medium_backward',
-    6: 'long_forward',
-    7: 'long_lateral',
+    2: 'short_forward',
+    3: 'medium_backward',
+    4: 'medium_lateral',  # includes long_lateral
+    5: 'medium_forward',
+    6: 'long_backward',
+    7: 'long_forward',
     8: 'shoot'
 }
 
@@ -37,7 +40,7 @@ class FieldGrid:
     
     Parameters
     ----------
-    n_rows : int, default=17
+    n_rows : int, default=34
         Number of grid rows (vertical divisions)
     n_cols : int, default=22
         Number of grid columns (horizontal divisions)
@@ -58,7 +61,7 @@ class FieldGrid:
     
     def __init__(
         self,
-        n_rows: int = 17,
+        n_rows: int = 34,
         n_cols: int = 22,
         pitch_length: float = 105,
         pitch_width: float = 68

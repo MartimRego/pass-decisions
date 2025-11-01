@@ -308,6 +308,12 @@ def extract_pass_events(events: pd.DataFrame) -> pd.DataFrame:
     print(f"  Removing {missing_coords.sum():,} events with missing coordinates")
     passes = passes[~missing_coords].copy()
     
+    # Filter out clearances (defensive actions, not tactical passes)
+    if 'end_type' in passes.columns:
+        clearances = passes['end_type'] == 'clearance'
+        print(f"  Removing {clearances.sum():,} clearances")
+        passes = passes[~clearances].copy()
+    
     # Add success indicator - use pass_outcome field (more accurate than end_type)
     if 'pass_outcome' in passes.columns:
         # SkillCorner provides: 'successful', 'unsuccessful', 'offside', etc.
@@ -362,22 +368,21 @@ def classify_pass_length(distance: pd.Series) -> pd.Series:
     Notes
     -----
     Thresholds:
-    - short: < 15m
-    - medium: 15-25m
+    - short: <= 10m
+    - medium: 10-25m
     - long: > 25m
     """
     return pd.cut(
         distance,
-        bins=[0, 15, 25, np.inf],
+        bins=[-0.001, 10, 25, np.inf],  # -0.001 to include 0
         labels=['short', 'medium', 'long']
     )
 
 
 def classify_pass_direction(
     dx: pd.Series,
-    dy: pd.Series,
-    forward_threshold: float = 2.0,
-    lateral_threshold: float = 2.0
+    forward_threshold: float = 5.0,
+    lateral_threshold: float = 5.0
 ) -> pd.Series:
     """
     Classify pass direction into forward/lateral/backward.
@@ -385,12 +390,10 @@ def classify_pass_direction(
     Parameters
     ----------
     dx : pd.Series
-        Change in x coordinate (horizontal)
-    dy : pd.Series
-        Change in y coordinate (vertical)
-    forward_threshold : float
+        Change in x coordinate (horizontal, progressive direction)
+    forward_threshold : float, default=5.0
         Minimum dx to be considered forward (meters)
-    lateral_threshold : float
+    lateral_threshold : float, default=5.0
         Maximum abs(dx) to be considered lateral (meters)
         
     Returns
@@ -401,9 +404,9 @@ def classify_pass_direction(
     Notes
     -----
     Classification logic:
-    - forward: dx > forward_threshold
-    - backward: dx < -forward_threshold
-    - lateral: abs(dx) <= lateral_threshold
+    - forward: dx > forward_threshold (5m)
+    - backward: dx < -forward_threshold (-5m)
+    - lateral: abs(dx) <= lateral_threshold (within ±5m)
     """
     direction = pd.Series('lateral', index=dx.index)
     direction[dx > forward_threshold] = 'forward'
@@ -413,38 +416,73 @@ def classify_pass_direction(
 
 def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     """
-    Add pass type classification (9 categories) to pass events.
+    Add pass type classification (8 categories) to pass events.
+    
+    Filters out zero-distance passes (ball controls) and classifies
+    remaining passes by length and direction.
     
     Parameters
     ----------
     passes : pd.DataFrame
-        Pass events with rescaled coordinates
+        Pass events with normalized coordinates (x_start_norm, x_end_norm, etc.)
         
     Returns
     -------
     pd.DataFrame
-        Passes with added columns:
+        Filtered passes with added columns:
+        - pass_distance: Euclidean distance in meters
+        - dx: Change in x (progressive direction)
+        - dy: Change in y (lateral direction)
         - pass_length: 'short', 'medium', 'long'
         - pass_direction: 'forward', 'lateral', 'backward'
         - pass_type: combined (e.g., 'short_forward')
-        - action_id: integer 0-8 for MDP indexing
+        
+    Notes
+    -----
+    Creates 8 pass types:
+    - short/medium × backward/lateral/forward = 6 types
+    - long × backward/forward = 2 types (long_lateral merged into long_forward)
+    - Plus 'shoot' action (not from passes, added later)
+    
+    Zero-distance passes are filtered out as they represent ball controls
+    rather than actual passes. This improves data quality and success rates.
+    
+    Examples
+    --------
+    >>> passes = classify_pass_type(passes)
+    >>> passes['pass_type'].value_counts()
     """
     passes = passes.copy()
     
-    # Calculate pass metrics
-    passes['dx'] = passes['x_end_rescaled'] - passes['x_start_rescaled']
-    passes['dy'] = passes['y_end_rescaled'] - passes['y_start_rescaled']
+    # Compute pass distance and direction changes
+    passes['dx'] = passes['x_end_norm'] - passes['x_start_norm']
+    passes['dy'] = passes['y_end_norm'] - passes['y_start_norm']
     passes['pass_distance'] = np.sqrt(passes['dx']**2 + passes['dy']**2)
     
-    # Classify
-    passes['pass_length'] = classify_pass_length(passes['pass_distance'])
-    passes['pass_direction'] = classify_pass_direction(passes['dx'], passes['dy'])
-    passes['pass_type'] = passes['pass_length'] + '_' + passes['pass_direction']
+    # Filter out zero-distance passes (ball controls)
+    n_before = len(passes)
+    passes = passes[passes['pass_distance'] > 0].copy()
+    n_after = len(passes)
+    n_filtered = n_before - n_after
     
-    # TODO: Add action_id mapping (0-8)
-    # 0: short_forward, 1: short_lateral, 2: short_backward
-    # 3: medium_forward, 4: medium_lateral, 5: medium_backward
-    # 6: long_forward, 7: long_lateral, 8: shoot (handled separately)
+    print(f"🔧 Filtered zero-distance passes:")
+    print(f"   Removed: {n_filtered:,} ({n_filtered/n_before*100:.2f}%)")
+    print(f"   Remaining: {n_after:,}")
+    
+    # Classify length and direction
+    passes['pass_length'] = classify_pass_length(passes['pass_distance'])
+    passes['pass_direction'] = classify_pass_direction(passes['dx'])
+    
+    # Combine into pass_type
+    passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)
+    
+    # Merge long_lateral into medium_lateral
+    # Long lateral passes are too rare (0.04%), merge with medium lateral
+    passes.loc[passes['pass_type'] == 'long_lateral', 'pass_type'] = 'medium_lateral'
+    
+    print(f"✅ Pass types classified:")
+    print(f"   Length × Direction = {passes['pass_length'].nunique()} × {passes['pass_direction'].nunique()} = {passes['pass_type'].nunique()} unique types")
+    print(f"   (long_lateral merged into medium_lateral)")
     
     return passes
 
@@ -456,7 +494,12 @@ def validate_pass_classifications(passes: pd.DataFrame) -> None:
     Parameters
     ----------
     passes : pd.DataFrame
-        Classified pass events
+        Classified pass events with pass_type column
+        
+    Notes
+    -----
+    Reports special attention to long_backward passes to assess if this
+    action type is frequent enough to warrant inclusion in MDP action space.
     """
     print("=" * 60)
     print("PASS CLASSIFICATION VALIDATION")
@@ -465,15 +508,33 @@ def validate_pass_classifications(passes: pd.DataFrame) -> None:
     print(f"\nTotal passes: {len(passes):,}")
     
     print("\n--- Length Distribution ---")
-    print(passes['pass_length'].value_counts().sort_index())
+    length_dist = passes['pass_length'].value_counts().sort_index()
+    print(length_dist)
+    print(f"Percentages: {(length_dist / len(passes) * 100).round(2)}%")
     
     print("\n--- Direction Distribution ---")
-    print(passes['pass_direction'].value_counts().sort_index())
+    dir_dist = passes['pass_direction'].value_counts().sort_index()
+    print(dir_dist)
+    print(f"Percentages: {(dir_dist / len(passes) * 100).round(2)}%")
     
     print("\n--- Combined Type Distribution ---")
-    print(passes['pass_type'].value_counts())
+    type_dist = passes['pass_type'].value_counts()
+    print(type_dist)
+    print(f"\nPercentages:")
+    print((type_dist / len(passes) * 100).round(2))
     
-    print("\n--- Distance Statistics ---")
+    # Special focus on long_backward for action space decision
+    if 'long_backward' in type_dist.index:
+        long_backward_count = type_dist['long_backward']
+        long_backward_pct = (long_backward_count / len(passes)) * 100
+        print(f"\n🔍 LONG_BACKWARD PASSES:")
+        print(f"   Count: {long_backward_count:,}")
+        print(f"   Percentage: {long_backward_pct:.2f}%")
+        print(f"   {'⚠️ RARE - Consider merging/removing' if long_backward_pct < 2.0 else '✅ Sufficient for MDP'}")
+    else:
+        print(f"\n🔍 LONG_BACKWARD PASSES: None found")
+    
+    print("\n--- Distance Statistics by Length ---")
     print(passes.groupby('pass_length')['pass_distance'].describe())
     
     print("\n--- Success Rate by Type ---")
