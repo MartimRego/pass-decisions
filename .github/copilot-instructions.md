@@ -253,49 +253,53 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
 
 ### Project Timeline (Nov 1-12, 2025)
 
-**Weekend 1: Foundation (Nov 2-3)**
-- Saturday Nov 2 (8-10h):
+**Weekend 1: Foundation (Nov 1-2)**
+- Saturday Nov 1 (8-10h):
+  - Project skeleton creation and setup verification
   - Data exploration and structure understanding
   - Define grid discretization and pass classification thresholds
   - Create state encoding and action classification functions
   - Initial data quality validation
   
-- Sunday Nov 3 (8-10h):
+- Sunday Nov 2 (8-10h):
   - Build pass classification pipeline
   - Extract and classify all passes from Premier League season
   - Map passes to (state_from, action, state_to) tuples
   - Visualize pass distributions and validate classifications
 
-**Week 2: MDP Construction (Nov 4-8)**
-- Monday Nov 4 (2-3h): Transition probability estimation with Laplace smoothing
-- Tuesday Nov 5 (2-3h): Policy estimation (action selection probabilities per state)
-- Wednesday Nov 6 (2-3h): Position-based xG model for shooting
-- Thursday Nov 7 (2-3h): Pass success rate modeling with quality distribution analysis
-- Friday Nov 8 (2-3h): Fundamental matrix computation and validation
+**Week 2: MDP Construction (Nov 3-7)**
+- Monday Nov 3 (2-3h): Transition probability estimation with Laplace smoothing
+- Tuesday Nov 4 (2-3h): Policy estimation (action selection probabilities per state)
+- Wednesday Nov 5 (2-3h): Position-based xG model for shooting
+- Thursday Nov 6 (2-3h): Pass success rate modeling with quality distribution analysis
+- Friday Nov 7 (2-3h): Fundamental matrix computation and validation
 
-**Weekend 2: Analysis & Policy Experiments (Nov 9-10)**
-- Saturday Nov 9 (8-10h):
+**Weekend 2: Analysis & Policy Experiments (Nov 8-9)**
+- Saturday Nov 8 (8-10h):
   - Implement quality-quantity trade-off modeling for pass success rates
   - "What should players do?" analysis: optimal action per zone
   - Generate heat maps showing optimal pass types
   - Compare immediate shooting vs. different pass sequences
   
-- Sunday Nov 10 (8-10h):
+- Sunday Nov 9 (8-10h):
   - Counterfactual policy analysis: "What if?" scenarios
   - Modify policies (increase/decrease specific pass types in zones)
   - Compute expected goals under altered policies
   - Identify strategic insights and tactical recommendations
 
-**Final Push (Nov 11-12)**
-- Monday Nov 11 (3-4h):
+**Final Push (Nov 10-12)**
+- Monday Nov 10 (3-4h):
   - Visualization refinement and tactical interpretation
   - Create compelling figures for presentation
   - Draft findings and insights
   
-- Tuesday Nov 12 (4-6h):
+- Tuesday Nov 11 (4-6h):
   - Complete write-up with methodology, results, discussion
   - Final validation and code cleanup
+  
+- Wednesday Nov 12 (2-4h):
   - Prepare submission materials
+  - Final review and polish
   - ✅ PROJECT READY FOR SUBMISSION
 
 ### Key Deliverables
