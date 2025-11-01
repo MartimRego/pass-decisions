@@ -7,9 +7,11 @@
   - ✅ Module 1: Completed (Tracking Basics)
   - ✅ Module 2: Completed (Playing Styles Analysis - Clustering)
   - ✅ Module 3: Completed (GNN Training)
-  - 🔄 Module 4: In Progress (Possession Values - VAEP & xT)
+  - ✅ Module 4: Completed (Possession Values - VAEP & xT)
+  - 🚧 **FINAL PROJECT**: In Progress - MDP-based Pass Decision Analysis
 - **Hardware**: **✅ UPGRADED RAM** - memory-saving strategies from Module 1 are **NO LONGER NEEDED**
-- **Previous Memory Constraints**: Module 1 notebooks contain memory optimization workarounds (chunking, batching, Polars migration) that can now be **IGNORED** or removed
+- **Project Deadline**: November 12, 2025 (submission ready)
+- **Project Due Date**: November 13, 2025
 
 ## 📚 Course Structure Overview
 
@@ -34,10 +36,11 @@
 - **Packages Installed**: TensorFlow 2.20.0, graph-nets, PyTorch 2.9.0, PyTorch Geometric 2.7.0
 - **Status**: Completed
 
-### Module 4: Possession Values 🔄
-- **Topics**: VAEP (Value of Actions by Estimating Probabilities), xT (Expected Threat), possession outcome modeling
+### Module 4: Possession Values ✅
+- **Topics**: VAEP (Value of Actions by Estimating Probabilities), xT (Expected Threat), possession outcome modeling, statsmodels for coefficient interpretation
 - **Key Files**: `possession_values.ipynb`
-- **Status**: **Currently Active**
+- **Packages Used**: statsmodels, scikit-learn, matplotlib, mplsoccer
+- **Status**: Completed
 
 ## 🗂️ Data Structure
 
@@ -207,8 +210,175 @@ As the student progresses:
 
 ---
 
-**Last Updated**: October 26, 2025  
-**Current Focus**: Module 4 - Possession Values (VAEP & xT)  
+**Last Updated**: November 1, 2025  
+**Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
+**Hardware Status**: ✅ RAM Upgraded - No Memory Constraints
+
+---
+
+## 🎯 FINAL PROJECT: Pass Decision Analysis Using MDP Framework
+
+### Project Overview
+Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass decisions in soccer, inspired by Van Roy et al.'s "Leaving Goals on the Pitch" paper on shooting decisions. Using Premier League 2024 season event data.
+
+### Research Questions
+1. In which zones do short progressive passes lead to better goal-scoring chances than long direct balls?
+2. What is the probability of scoring after sequences of short passes vs. one long pass from midfield?
+3. How would altering pass type policies (e.g., 10-20% more long forward passes in specific zones) affect expected goals scored?
+4. What is the quality-quantity trade-off when teams increase pass frequency of certain types?
+
+### Technical Approach
+
+**MDP Components**:
+- **State Space**: Full-field grid discretization (22×17 cells = 374 states) + 3 absorbing states (goal, no_goal, loss_possession)
+- **Action Space**: 9 actions per state:
+  1. `short_forward` (< 15m, progressive)
+  2. `short_lateral` (< 15m, horizontal)
+  3. `short_backward` (< 15m, retention)
+  4. `medium_forward` (15-25m, line-breaking)
+  5. `medium_lateral` (15-25m, switch)
+  6. `medium_backward` (15-25m, outlet)
+  7. `long_forward` (> 25m, direct)
+  8. `long_lateral` (> 25m, cross-field)
+  9. `shoot`
+- **Transition Function**: P(s, a, s') learned from event data with Laplace smoothing
+- **Policy**: π(a | s) = probability of selecting action a in state s
+- **Reward Function**: R = 1 for goals, 0 otherwise
+- **Success Rate Modeling**: Quality-quantity trade-off modeling (Method 3) - when policy changes increase pass frequency, success rates adjust based on pass quality distribution
+
+**Analysis Methods**:
+1. **Fundamental Matrix Approach**: Compute expected goals under different policies
+2. **Probabilistic Model Checking**: Compare action sequences (optional if time permits)
+3. **Counterfactual Policy Analysis**: Evaluate "what-if" scenarios
+
+### Project Timeline (Nov 1-12, 2025)
+
+**Weekend 1: Foundation (Nov 2-3)**
+- Saturday Nov 2 (8-10h):
+  - Data exploration and structure understanding
+  - Define grid discretization and pass classification thresholds
+  - Create state encoding and action classification functions
+  - Initial data quality validation
+  
+- Sunday Nov 3 (8-10h):
+  - Build pass classification pipeline
+  - Extract and classify all passes from Premier League season
+  - Map passes to (state_from, action, state_to) tuples
+  - Visualize pass distributions and validate classifications
+
+**Week 2: MDP Construction (Nov 4-8)**
+- Monday Nov 4 (2-3h): Transition probability estimation with Laplace smoothing
+- Tuesday Nov 5 (2-3h): Policy estimation (action selection probabilities per state)
+- Wednesday Nov 6 (2-3h): Position-based xG model for shooting
+- Thursday Nov 7 (2-3h): Pass success rate modeling with quality distribution analysis
+- Friday Nov 8 (2-3h): Fundamental matrix computation and validation
+
+**Weekend 2: Analysis & Policy Experiments (Nov 9-10)**
+- Saturday Nov 9 (8-10h):
+  - Implement quality-quantity trade-off modeling for pass success rates
+  - "What should players do?" analysis: optimal action per zone
+  - Generate heat maps showing optimal pass types
+  - Compare immediate shooting vs. different pass sequences
+  
+- Sunday Nov 10 (8-10h):
+  - Counterfactual policy analysis: "What if?" scenarios
+  - Modify policies (increase/decrease specific pass types in zones)
+  - Compute expected goals under altered policies
+  - Identify strategic insights and tactical recommendations
+
+**Final Push (Nov 11-12)**
+- Monday Nov 11 (3-4h):
+  - Visualization refinement and tactical interpretation
+  - Create compelling figures for presentation
+  - Draft findings and insights
+  
+- Tuesday Nov 12 (4-6h):
+  - Complete write-up with methodology, results, discussion
+  - Final validation and code cleanup
+  - Prepare submission materials
+  - ✅ PROJECT READY FOR SUBMISSION
+
+### Key Deliverables
+1. **Jupyter Notebook**: Complete analysis pipeline with documented code
+2. **MDP Model**: Learned transition probabilities, policies, and success rates
+3. **Visualizations**: Heat maps showing optimal actions per field zone
+4. **Analysis Results**: 
+   - Zone-specific pass recommendations
+   - Expected goal impact of policy modifications
+   - Quality-quantity trade-off curves
+5. **Written Report**: Methodology, findings, tactical insights, limitations
+
+### Data Specifications
+- **Source**: PremierLeague_data/2024/dynamic/*.parquet (event data)
+- **Scale**: ~380 matches × ~1500 passes/match = ~570,000 passes
+- **Coverage**: Full 2024 Premier League season
+- **Data Sparsity**: 374 states × 9 actions = 3,366 pairs → ~170 observations per pair (excellent coverage)
+
+### Success Criteria
+1. ✅ Complete MDP learned from Premier League data
+2. ✅ Quality-quantity trade-off model implemented
+3. ✅ Actionable tactical insights generated (zone-specific recommendations)
+4. ✅ Counterfactual analysis showing impact of policy changes
+5. ✅ Clear visualizations and interpretable results
+6. ✅ Written documentation of methodology and findings
+
+### Reference Materials
+- **Primary Paper**: Van Roy et al. (2020) "Leaving Goals on the Pitch: Evaluating Decision Making in Soccer"
+- **Course Modules**: Module 4 (Possession Values), Module 2 (Clustering/Visualization)
+- **Tools**: pandas, numpy, matplotlib, mplsoccer, scipy (fundamental matrix)
+
+---
+
+## 🛠️ Project-Specific Guidelines
+
+### When Working on Final Project
+
+1. **Code Organization**:
+   - Use clear section headers in notebook
+   - Separate data processing, MDP construction, and analysis
+   - Document all assumptions and design choices
+   - Include sanity checks and validation steps
+
+2. **Data Processing**:
+   - Validate pass classifications (visual spot-checks)
+   - Check for edge cases (passes near boundaries, very short/long passes)
+   - Handle missing data gracefully
+   - Use vectorized operations for efficiency
+
+3. **MDP Construction**:
+   - Verify probabilities sum to 1 for each (state, action)
+   - Check for numerical stability in matrix operations
+   - Use Laplace smoothing (α=1 or 2) consistently
+   - Validate transition matrix is well-conditioned
+
+4. **Success Rate Modeling**:
+   - Rank passes by quality metric (xT added, or goal-outcome)
+   - Compute quality distributions per (state, action)
+   - Apply adjustments when policy changes frequency
+   - Document assumptions clearly
+
+5. **Analysis & Interpretation**:
+   - Connect findings to tactical concepts
+   - Compare results to reference paper where applicable
+   - Acknowledge limitations and data constraints
+   - Provide actionable insights for coaches/analysts
+
+6. **Visualization**:
+   - Use mplsoccer for pitch plots
+   - Consistent color schemes (diverging for comparisons)
+   - Clear legends and annotations
+   - Heat maps for spatial patterns
+
+### Football Analytics Context for Project
+- **Pass Types**: Short build-up vs. long direct play distinction is tactically meaningful
+- **Direction**: Forward passes are risky but progressive; backward passes are safe but not advancing
+- **Zones**: Defensive third = safety priority, attacking third = risk-taking acceptable
+- **Expected Goals**: Ultimate success metric - all analysis ties back to goal probability
+
+---
+
+**Last Updated**: November 1, 2025  
+**Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
 **Hardware Status**: ✅ RAM Upgraded - No Memory Constraints
 
 ## Libraries to Favor

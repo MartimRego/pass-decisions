@@ -1,0 +1,18 @@
+Final Project Plan - Pass Decision Analysis with MDP
+
+Following the Van Roy et al. "Leaving Goals on the Pitch" paper you recommended, but analyzing passes instead of shooting decisions.
+
+Research Question:
+In which zones do short vs. long passes (with direction: forward/lateral/backward) lead to better goal-scoring chances? What happens if teams change their pass policies?
+
+Approach:
+- MDP with full-field grid (22x17 = 374 states)
+- 9 actions: short/medium/long × forward/lateral/backward + shoot - long/backward as it would be uncommon
+- Learn transitions and policies from full PL 2024 season
+- Implement quality-quantity trade-off modeling  - when teams increase pass frequency, success rates drop because they take worse passes. Try to follow the same methodology as the paper.
+
+Analysis:
+1. Zone-by-zone optimal action heat maps (should I play short or go long from here?)
+2. Pass sequence comparison (2-3 short passes vs 1 long ball - which scores more?)
+3. Counterfactual "what-if" scenarios (what if this team played 20% more long balls from midfield?)
+4. Find zones where teams are leaving goals on the pitch by not using certain pass types enough
