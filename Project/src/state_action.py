@@ -14,7 +14,7 @@ import pandas as pd
 from typing import Tuple, Dict, Optional
 
 
-# Action space definition (9 total actions: 8 pass types + shoot)
+# Action space definition (10 total actions: 8 pass types + shoot + carry)
 # Pass length thresholds: short ≤10m, medium 10-25m, long >25m
 # Pass direction thresholds: forward/backward >5m, lateral ≤5m
 # Note: long_lateral merged into medium_lateral (too rare)
@@ -27,11 +27,20 @@ ACTION_NAMES = {
     5: 'medium_forward',
     6: 'long_backward',
     7: 'long_forward',
-    8: 'shoot'
+    8: 'shoot',
+    9: 'carry'
 }
 
 # Reverse mapping
 ACTION_IDS = {v: k for k, v in ACTION_NAMES.items()}
+
+# Absorbing state indices (added after field states)
+# If grid has 748 field states, absorbing states are 748, 749, 750
+ABSORBING_STATES = {
+    'goal': lambda n_field_states: n_field_states,  # Successful shot
+    'no_goal': lambda n_field_states: n_field_states + 1,  # Failed shot
+    'loss_possession': lambda n_field_states: n_field_states + 2  # Failed pass/carry
+}
 
 
 class FieldGrid:
@@ -220,14 +229,15 @@ def add_state_action_encoding(
     grid: FieldGrid
 ) -> pd.DataFrame:
     """
-    Add state and action encodings to action DataFrame (passes + shots).
+    Add state and action encodings to action DataFrame (passes + shots + carries).
     
     Parameters
     ----------
     df : pd.DataFrame
-        Action events (passes and/or shots) with rescaled coordinates
+        Action events with rescaled coordinates
         For passes: must have pass_length and pass_direction columns
         For shots: must have action_type='shoot' column
+        For carries: must have action_type='carry' column
     grid : FieldGrid
         Grid object for state encoding
         
@@ -236,8 +246,8 @@ def add_state_action_encoding(
     pd.DataFrame
         Actions with added columns:
         - state_from: starting state index
-        - state_to: ending state index (or absorbing state for shots)
-        - action: action ID (0-7 for passes, 8 for shoot)
+        - state_to: ending state index (or absorbing state)
+        - action: action ID (0-7 for passes, 8 for shoot, 9 for carry)
     """
     df = df.copy()
     
@@ -255,12 +265,16 @@ def add_state_action_encoding(
     
     # Encode actions
     if 'action_type' in df.columns:
-        # Handle both passes and shots
-        df['action'] = df.apply(
-            lambda row: 8 if row.get('action_type') == 'shoot' 
-            else classify_action(row.get('pass_length', ''), row.get('pass_direction', '')),
-            axis=1
-        )
+        # Handle passes, shots, and carries
+        def get_action_id(row):
+            if row.get('action_type') == 'shoot':
+                return 8
+            elif row.get('action_type') == 'carry':
+                return 9
+            else:  # pass
+                return classify_action(row.get('pass_length', ''), row.get('pass_direction', ''))
+        
+        df['action'] = df.apply(get_action_id, axis=1)
     else:
         # Legacy: only passes
         df['action'] = df.apply(
@@ -274,6 +288,73 @@ def add_state_action_encoding(
 def get_action_name(action_id: int) -> str:
     """Get human-readable name for action ID."""
     return ACTION_NAMES.get(action_id, 'unknown')
+
+
+def create_action_availability_mask(
+    grid: FieldGrid,
+    shoot_distance_threshold: float = 30.0
+) -> np.ndarray:
+    """
+    Create binary mask indicating which actions are available in each state.
+    
+    Parameters
+    ----------
+    grid : FieldGrid
+        Grid object
+    shoot_distance_threshold : float, default=30.0
+        Maximum distance from goal (meters) where shooting is allowed
+        
+    Returns
+    -------
+    np.ndarray
+        Boolean array of shape (n_states, n_actions) where True means action is available
+        
+    Notes
+    -----
+    Constraints applied:
+    - Shooting (action=8): only allowed within shoot_distance_threshold of goal
+    - Backward passes (actions 0, 3, 6): disabled in leftmost column (defensive edge)
+    - Forward passes (actions 2, 5, 7): disabled in rightmost column (attacking edge)
+    - Carries (action=9): always available
+    - Lateral passes (actions 1, 4): always available
+    """
+    n_actions = len(ACTION_NAMES)
+    mask = np.ones((grid.n_states, n_actions), dtype=bool)
+    
+    # Get shooting threshold in x-coordinate
+    # Goal is at x=105m, so shooting allowed when x > (105 - threshold)
+    shoot_x_threshold = grid.pitch_length - shoot_distance_threshold
+    
+    for state in range(grid.n_states):
+        # Get state position
+        row = state // grid.n_cols
+        col = state % grid.n_cols
+        
+        # Calculate cell center x-coordinate
+        x_center = (col + 0.5) * grid.cell_width
+        
+        # Shooting constraint: disable if > 30m from goal
+        if x_center < shoot_x_threshold:
+            mask[state, 8] = False  # Disable shooting
+        
+        # Backward pass constraints: disable in leftmost column
+        if col == 0:
+            mask[state, 0] = False  # short_backward
+            mask[state, 3] = False  # medium_backward
+            mask[state, 6] = False  # long_backward
+        
+        # Forward pass constraints: disable in rightmost column
+        if col == grid.n_cols - 1:
+            mask[state, 2] = False  # short_forward
+            mask[state, 5] = False  # medium_forward
+            mask[state, 7] = False  # long_forward
+    
+    return mask
+
+
+def get_available_actions(state: int, mask: np.ndarray) -> list:
+    """Get list of available action IDs for a state."""
+    return [action_id for action_id in range(mask.shape[1]) if mask[state, action_id]]
 
 
 def visualize_grid(grid: FieldGrid) -> None:

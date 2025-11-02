@@ -416,12 +416,118 @@ def extract_shot_events(events: pd.DataFrame) -> pd.DataFrame:
     return shots
 
 
+def extract_carry_events(events: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filter events to only carrying/dribbling actions.
+    
+    Parameters
+    ----------
+    events : pd.DataFrame
+        All event data
+        
+    Returns
+    -------
+    pd.DataFrame
+        Only carry events with outcome information
+        
+    Notes
+    -----
+    Carries are identified by carry=True in player_possession events.
+    Success is determined by end_type: successful if ends in 'pass' or 'shot',
+    failed if ends in 'possession_loss'.
+    """
+    print(f"Extracting carry events from {len(events):,} total events...")
+    
+    # Filter to player_possession events with carry=True
+    carries = events[
+        (events['event_type'] == 'player_possession') & 
+        (events['carry'] == True)
+    ].copy()
+    print(f"  Found {len(carries):,} carry events")
+    
+    # Filter to events with valid coordinates
+    required_cols = ['x_start', 'y_start', 'x_end', 'y_end']
+    missing_coords = carries[required_cols].isna().any(axis=1)
+    
+    if missing_coords.sum() > 0:
+        print(f"  Removing {missing_coords.sum():,} carries with missing coordinates")
+        carries = carries[~missing_coords].copy()
+    
+    # Determine carry success based on end_type
+    # Successful if ends in pass or shot, failed if possession_loss
+    carries['success'] = carries['end_type'].isin(['pass', 'shot']).astype(int)
+    
+    # Print success breakdown
+    successful = carries['success'].sum()
+    failed = len(carries) - successful
+    print(f"  Carry outcomes:")
+    print(f"    Successful (ended in pass/shot): {successful:6,} ({successful/len(carries):5.1%})")
+    print(f"    Failed (possession lost):        {failed:6,} ({failed/len(carries):5.1%})")
+    
+    print(f"✅ Extracted {len(carries):,} carry events")
+    
+    return carries
+
+
+def combine_passes_shots_carries(
+    passes: pd.DataFrame,
+    shots: pd.DataFrame,
+    carries: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Combine pass, shot, and carry events into a single DataFrame for MDP.
+    
+    Parameters
+    ----------
+    passes : pd.DataFrame
+        Pass events from extract_pass_events()
+    shots : pd.DataFrame
+        Shot events from extract_shot_events()
+    carries : pd.DataFrame
+        Carry events from extract_carry_events()
+        
+    Returns
+    -------
+    pd.DataFrame
+        Combined events with 'action_type' column ('pass', 'shoot', or 'carry')
+        
+    Notes
+    -----
+    Action encoding:
+    - Passes: actions 0-7 (based on length/direction)
+    - Shots: action 8
+    - Carries: action 9
+    """
+    # Add action type markers
+    passes = passes.copy()
+    shots = shots.copy()
+    carries = carries.copy()
+    
+    passes['action_type'] = 'pass'
+    shots['action_type'] = 'shoot'
+    carries['action_type'] = 'carry'
+    
+    # Keep all columns from all DataFrames
+    combined = pd.concat([passes, shots, carries], ignore_index=True)
+    
+    print(f"✅ Combined {len(passes):,} passes + {len(shots):,} shots + {len(carries):,} carries")
+    print(f"   = {len(combined):,} total actions")
+    print(f"   Pass success rate:  {passes['success'].mean():.1%}")
+    print(f"   Shot success rate:  {shots['success'].mean():.1%}")
+    print(f"   Carry success rate: {carries['success'].mean():.1%}")
+    
+    return combined
+
+
+# Keep old function for backward compatibility
 def combine_passes_and_shots(
     passes: pd.DataFrame,
     shots: pd.DataFrame
 ) -> pd.DataFrame:
     """
     Combine pass and shot events into a single DataFrame for MDP.
+    
+    DEPRECATED: Use combine_passes_shots_carries() instead.
     
     Parameters
     ----------
