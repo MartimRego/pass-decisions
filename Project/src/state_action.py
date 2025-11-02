@@ -216,46 +216,59 @@ def classify_action(pass_length: str, pass_direction: str) -> int:
 
 
 def add_state_action_encoding(
-    passes: pd.DataFrame,
+    df: pd.DataFrame,
     grid: FieldGrid
 ) -> pd.DataFrame:
     """
-    Add state and action encodings to pass DataFrame.
+    Add state and action encodings to action DataFrame (passes + shots).
     
     Parameters
     ----------
-    passes : pd.DataFrame
-        Pass events with rescaled coordinates and classifications
+    df : pd.DataFrame
+        Action events (passes and/or shots) with rescaled coordinates
+        For passes: must have pass_length and pass_direction columns
+        For shots: must have action_type='shoot' column
     grid : FieldGrid
         Grid object for state encoding
         
     Returns
     -------
     pd.DataFrame
-        Passes with added columns:
+        Actions with added columns:
         - state_from: starting state index
-        - state_to: ending state index
-        - action: action ID
+        - state_to: ending state index (or absorbing state for shots)
+        - action: action ID (0-7 for passes, 8 for shoot)
     """
-    passes = passes.copy()
+    df = df.copy()
     
-    # Encode states
-    passes['state_from'] = passes.apply(
+    # Encode starting states
+    df['state_from'] = df.apply(
         lambda row: grid.xy_to_state(row['x_start_rescaled'], row['y_start_rescaled']),
         axis=1
     )
-    passes['state_to'] = passes.apply(
+    
+    # Encode ending states
+    df['state_to'] = df.apply(
         lambda row: grid.xy_to_state(row['x_end_rescaled'], row['y_end_rescaled']),
         axis=1
     )
     
     # Encode actions
-    passes['action'] = passes.apply(
-        lambda row: classify_action(row['pass_length'], row['pass_direction']),
-        axis=1
-    )
+    if 'action_type' in df.columns:
+        # Handle both passes and shots
+        df['action'] = df.apply(
+            lambda row: 8 if row.get('action_type') == 'shoot' 
+            else classify_action(row.get('pass_length', ''), row.get('pass_direction', '')),
+            axis=1
+        )
+    else:
+        # Legacy: only passes
+        df['action'] = df.apply(
+            lambda row: classify_action(row['pass_length'], row['pass_direction']),
+            axis=1
+        )
     
-    return passes
+    return df
 
 
 def get_action_name(action_id: int) -> str:

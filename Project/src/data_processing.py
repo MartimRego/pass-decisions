@@ -345,10 +345,117 @@ def extract_pass_events(events: pd.DataFrame) -> pd.DataFrame:
     print(f"✅ Extracted {len(passes):,} pass events")
     
     return passes
-    # - Remove set pieces (optional)
-    # - Add pass distance and angle calculations
+
+
+def extract_shot_events(events: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filter events to only shooting actions.
     
-    raise NotImplementedError("To be implemented")
+    Parameters
+    ----------
+    events : pd.DataFrame
+        All event data
+        
+    Returns
+    -------
+    pd.DataFrame
+        Only shot events with outcome information (goal vs no_goal)
+        
+    Notes
+    -----
+    Shots are identified by end_type='shot' in player_possession events.
+    Success is determined by whether the shot resulted in a goal.
+    """
+    print(f"Extracting shot events from {len(events):,} total events...")
+    
+    # Filter to player_possession events with end_type='shot'
+    shots = events[
+        (events['event_type'] == 'player_possession') & 
+        (events['end_type'] == 'shot')
+    ].copy()
+    print(f"  Found {len(shots):,} shot events")
+    
+    # Filter to events with valid start coordinates (end coords not needed for shots)
+    required_cols = ['x_start', 'y_start']
+    missing_coords = shots[required_cols].isna().any(axis=1)
+    
+    if missing_coords.sum() > 0:
+        print(f"  Removing {missing_coords.sum():,} shots with missing coordinates")
+        shots = shots[~missing_coords].copy()
+    
+    # Determine shot success (goal vs no_goal)
+    # Check if there's a goal-related field
+    if 'lead_to_goal' in shots.columns:
+        # SkillCorner data uses lead_to_goal boolean column
+        shots['success'] = shots['lead_to_goal'].fillna(False).astype(int)
+    elif 'is_goal' in shots.columns:
+        shots['success'] = shots['is_goal'].astype(int)
+    elif 'pass_outcome' in shots.columns:
+        # If pass_outcome exists, check for 'goal' value
+        shots['success'] = (shots['pass_outcome'] == 'goal').astype(int)
+    else:
+        # Default: assume we need to infer from subsequent events or other fields
+        # For now, set to 0 (we'll need to cross-reference with goal events)
+        print("  ⚠️  No explicit goal indicator found, setting all shots to unsuccessful")
+        print("     (This may need refinement based on actual data structure)")
+        shots['success'] = 0
+    
+    # Add dummy end coordinates (shots end at goal location)
+    # We'll use the goal center as a proxy
+    shots['x_end'] = PITCH_LENGTH  # Goal line
+    shots['y_end'] = PITCH_WIDTH / 2  # Center of goal
+    
+    # Print success breakdown
+    goals = shots['success'].sum()
+    print(f"  Shot outcomes:")
+    print(f"    Goals:     {goals:6,} ({goals/len(shots):5.1%})")
+    print(f"    No goals:  {len(shots)-goals:6,} ({(len(shots)-goals)/len(shots):5.1%})")
+    
+    print(f"✅ Extracted {len(shots):,} shot events")
+    
+    return shots
+
+
+def combine_passes_and_shots(
+    passes: pd.DataFrame,
+    shots: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Combine pass and shot events into a single DataFrame for MDP.
+    
+    Parameters
+    ----------
+    passes : pd.DataFrame
+        Pass events from extract_pass_events()
+    shots : pd.DataFrame
+        Shot events from extract_shot_events()
+        
+    Returns
+    -------
+    pd.DataFrame
+        Combined events with 'action_type' column ('pass' or 'shoot')
+        
+    Notes
+    -----
+    Shots will be assigned action=8 later during state-action encoding.
+    Passes will be assigned actions 0-7 based on length/direction.
+    """
+    # Add action type marker
+    passes = passes.copy()
+    shots = shots.copy()
+    
+    passes['action_type'] = 'pass'
+    shots['action_type'] = 'shoot'
+    
+    # Keep all columns from both DataFrames, filling missing values
+    # This preserves important columns like 'attacking_side' needed for normalization
+    combined = pd.concat([passes, shots], ignore_index=True)
+    
+    print(f"✅ Combined {len(passes):,} passes + {len(shots):,} shots = {len(combined):,} total actions")
+    print(f"   Pass success rate: {passes['success'].mean():.1%}")
+    print(f"   Shot success rate (goals): {shots['success'].mean():.1%}")
+    
+    return combined
 
 
 def classify_pass_length(distance: pd.Series) -> pd.Series:
@@ -478,11 +585,14 @@ def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     
     # Merge long_lateral into medium_lateral
     # Long lateral passes are too rare (0.04%), merge with medium lateral
-    passes.loc[passes['pass_type'] == 'long_lateral', 'pass_type'] = 'medium_lateral'
+    long_lateral_mask = passes['pass_type'] == 'long_lateral'
+    passes.loc[long_lateral_mask, 'pass_type'] = 'medium_lateral'
+    # Also update pass_length so classify_action works correctly
+    passes.loc[long_lateral_mask, 'pass_length'] = 'medium'
     
     print(f"✅ Pass types classified:")
     print(f"   Length × Direction = {passes['pass_length'].nunique()} × {passes['pass_direction'].nunique()} = {passes['pass_type'].nunique()} unique types")
-    print(f"   (long_lateral merged into medium_lateral)")
+    print(f"   (long_lateral merged into medium_lateral by updating pass_length)")
     
     return passes
 
