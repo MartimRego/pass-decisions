@@ -210,10 +210,10 @@ As the student progresses:
 
 ---
 
-**Last Updated**: November 1, 2025 (End of Day)  
+**Last Updated**: November 2, 2025 (End of Day)  
 **Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
 **Hardware Status**: ✅ RAM Upgraded - No Memory Constraints  
-**Day 1 Progress**: ✅ All Nov 1 tasks completed + clearance filtering + zone analysis (ahead of schedule!)
+**Weekend 1 Progress**: ✅ COMPLETE! All foundation tasks done + carries integration + action masking (significantly ahead of schedule!)
 
 ---
 
@@ -223,31 +223,52 @@ As the student progresses:
 Project/
 ├── src/
 │   ├── __init__.py
-│   ├── data_processing.py      # ✅ COMPLETE: Load, filter, classify passes (631 lines)
+│   ├── data_processing.py      # ✅ COMPLETE: Load, filter, classify passes + extract carries (853 lines)
 │   │   ├── load_premier_league_events()
 │   │   ├── extract_pass_events()  # Filters player_possession + clearances
+│   │   ├── extract_shot_events()  # ✅ Fixed: checks lead_to_goal column (12.34% goal rate)
+│   │   ├── extract_carry_events() # ✅ NEW: extracts carries (184K events, 91.6% success)
+│   │   ├── combine_passes_shots_carries()  # ✅ NEW: 3-way merge preserving all columns
 │   │   ├── rescale_coordinates()  # SkillCorner → FIFA (0-105m × 0-68m)
 │   │   ├── normalize_attack_direction()  # All teams attack left→right
 │   │   ├── classify_pass_length()  # short ≤10m, medium 10-25m, long >25m
 │   │   ├── classify_pass_direction()  # forward dx>5, backward dx<-5, lateral |dx|≤5
 │   │   └── classify_pass_type()  # 8 pass types + filtering
 │   │
-│   └── state_action.py         # ✅ COMPLETE: MDP state/action space (304 lines)
-│       ├── ACTION_NAMES  # Dict mapping 0-8 to action names
-│       └── FieldGrid     # 22×34 grid discretization class
+│   └── state_action.py         # ✅ COMPLETE: MDP state/action space + masking (400 lines)
+│       ├── ACTION_NAMES  # Dict mapping 0-9 to action names (10 actions now!)
+│       ├── ABSORBING_STATES  # ✅ NEW: goal, no_goal, loss_possession definitions
+│       ├── FieldGrid     # 22×34 grid discretization class
+│       ├── add_state_action_encoding()  # ✅ Updated: handles carries (action=9)
+│       ├── create_action_availability_mask()  # ✅ NEW: shooting/edge constraints
+│       └── get_available_actions()  # ✅ NEW: query helper for masked actions
 │
-├── pass_decision_analysis.ipynb  # ✅ CHAPTER 2 COMPLETE (8 sections executed)
+├── pass_decision_analysis.ipynb  # ✅ CHAPTERS 1-4 COMPLETE (41 cells executed)
 │   ├── Section 1: Imports (with module reloading)
 │   ├── Section 2: Data Exploration & Validation
-│   │   ├── 2.1: Load events (1.8M events → 359K passes)
-│   │   ├── 2.2: Extract passes (filters clearances)
-│   │   ├── 2.3: Coordinate transformation
-│   │   ├── 2.4: Pass classification (8 types)
-│   │   ├── 2.5: Statistics (79.20% success, distributions)
-│   │   ├── 2.6: Zone analysis (defensive/middle/attacking breakdown)
-│   │   └── 2.7: Final summary (267,616 passes ready)
+│   │   ├── 2.1: Load events (1.8M events)
+│   │   ├── 2.2: Extract passes (359K passes)
+│   │   ├── 2.3: Extract shots (8.7K shots, 12.34% goal rate)  # ✅ Fixed
+│   │   ├── 2.4: Extract carries (184K carries, 91.6% success)  # ✅ NEW
+│   │   ├── 2.5: Combine actions (460K total actions)  # ✅ Updated
+│   │   ├── 2.6: Coordinate transformation
+│   │   ├── 2.7: Pass classification (8 types)
+│   │   ├── 2.8: Statistics with carries included  # ✅ Updated
+│   │   ├── 2.9: Visualizations (passes + shots + carries)  # ✅ Updated
+│   │   ├── 2.10: Zone analysis (defensive/middle/attacking breakdown)
+│   │   └── 2.11: Final summary (460K actions ready)  # ✅ Updated
 │   │
-│   └── Section 3+: State-Action Encoding (TODO: Nov 2)
+│   ├── Section 3: Action Extraction Summary (carries included)  # ✅ Updated
+│   │
+│   └── Section 4: State-Action Encoding  # ✅ COMPLETE
+│       ├── 4.1: Create field grid (22×34 = 748 states)
+│       ├── 4.2: Encode all actions (passes + shots + carries)  # ✅ 10 actions
+│       ├── 4.3: Action availability mask implementation  # ✅ NEW
+│       ├── 4.4: State-action pair analysis (87.4% coverage)  # ✅ Updated
+│       ├── 4.5: Transition analysis
+│       ├── 4.6: Spatial coverage (3 heatmaps: passes, shots, carries)  # ✅ Updated
+│       ├── 4.7: Zone-based action distribution (includes carries)  # ✅ Updated
+│       └── 4.8: Chapter 4 summary with masking stats  # ✅ Updated
 │
 ├── diagnostic_scripts/  # Validation scripts created during development
 │   ├── test_clearance_filter.py
@@ -265,19 +286,41 @@ Project/
 - Event extraction: Filters `event_type == 'player_possession'` (matches Module 3 methodology)
 - Clearance removal: Filters `end_type == 'clearance'` (3,733 removed)
 - Zero-distance filtering: Removes passes with distance ≤ 0.01m (91,504 removed)
+- **Shot extraction**: Fixed to check `lead_to_goal` column → 12.34% goal rate (1,071 goals)
+- **Carry extraction**: NEW - filters `carry=True` events → 184,080 carries (91.6% success)
+  - Success based on `end_type`: successful if ends in 'pass' or 'shot', failed if 'possession_loss'
+  - Distance stats: mean 8.53m, median 5.77m, max 89.4m
 - Coordinate system: SkillCorner (-52 to 52, -34 to 34) → FIFA (0-105m × 0-68m)
 - Normalization: Flips coordinates so all teams attack left→right
 - Classification thresholds validated through diagnostic analysis
 
 **State-Action Space** (`state_action.py`):
-- Grid: 22 columns (x-axis, 4.77m) × 34 rows (y-axis, 2.00m) = 748 states
-- Actions: 0=short_backward, 1=short_lateral, ..., 8=shoot
-- Absorbing states planned: goal, no_goal, loss_possession (not yet implemented)
+- Grid: 22 rows (y-axis, 3.09m) × 34 columns (x-axis, 3.09m) = 748 states
+- **Actions: 10 total (0-9)**:
+  - 0-7: Pass types (short/medium/long × backward/lateral/forward)
+  - 8: shoot
+  - 9: carry (NEW!)
+- **Action Masking**: NEW - Implemented to reduce sparsity
+  - Shooting disabled when x < 75m (>30m from goal) → 528 states (70.59%) masked
+  - Backward passes disabled at col=0 (defensive edge) → 22 states masked
+  - Forward passes disabled at col=33 (attacking edge) → 22 states masked
+  - Total: 660 (state, action) pairs masked (8.82% reduction in state-action space)
+  - Impact: Allows smaller Laplace smoothing (α=2-3 instead of α=5-10)
+- **Absorbing states**: Defined (not yet in transition matrix):
+  - State 748: goal (successful shots)
+  - State 749: no_goal (failed shots)
+  - State 750: loss_possession (failed passes/carries)
 
 **Notebook Progress** (`pass_decision_analysis.ipynb`):
-- Chapter 2 fully executed with all validations
+- **Chapters 1-4 fully executed** with all validations
+- **Total actions**: 460,373 (up from 276,293)
+  - Passes: 267,616 (58.1%)
+  - Shots: 8,677 (1.9%, 1,071 goals = 12.34%)
+  - Carries: 184,080 (40.0%, 91.6% success)
+- **State-action coverage**: 87.4% (6,537 / 7,480 possible pairs)
+- **Visualizations**: 3-panel heatmaps (passes in YlOrRd, shots in Reds, carries in Blues)
 - Zone analysis reveals tactical patterns (defensive backward 49.7%, attacking forward 50.2%)
-- Ready for state-action encoding (Chapter 3)
+- Ready for MDP transition matrix construction (Chapter 5)
 
 ---
 
@@ -297,8 +340,9 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
 **MDP Components**:
 - **State Space**: Full-field grid discretization (22×34 cells = 748 states) + 3 absorbing states (goal, no_goal, loss_possession)
   - ✅ Implemented in `src/state_action.py` (FieldGrid class)
-  - Grid size: 4.77m × 2.00m cells
-- **Action Space**: 9 actions per state (✅ IMPLEMENTED):
+  - Grid size: 3.09m × 3.09m cells (square cells for uniform discretization)
+  - ✅ Absorbing states defined (state indices 748, 749, 750)
+- **Action Space**: 10 actions per state (✅ FULLY IMPLEMENTED):
   1. `short_backward` (≤10m, dx < -5m)
   2. `short_lateral` (≤10m, |dx| ≤ 5m)
   3. `short_forward` (≤10m, dx > 5m)
@@ -308,9 +352,18 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
   7. `long_backward` (>25m, dx < -5m)
   8. `long_forward` (>25m, dx > 5m)
   9. `shoot`
-- **Transition Function**: P(s, a, s') learned from event data with Laplace smoothing (TODO: Nov 3)
+  10. `carry` (dribbling with ball) ← ✅ NEW!
+- **Action Masking**: ✅ IMPLEMENTED - Reduces sparsity by 8.82%
+  - Shooting masked when >30m from goal (x < 75m) → 528 states
+  - Backward passes masked at defensive edge (col=0) → 22 states  
+  - Forward passes masked at attacking edge (col=33) → 22 states
+  - Total: 660 invalid (state, action) pairs removed
+- **Transition Function**: P(s, a, s') to be learned from event data with Laplace smoothing (TODO: Nov 3)
+  - Shape: (751, 10, 751) - 748 field states + 3 absorbing → 751 total
+  - Absorbing transitions: successful shots → 748, failed shots → 749, failed passes/carries → 750
 - **Policy**: π(a | s) = probability of selecting action a in state s (TODO: Nov 4)
-- **Reward Function**: R = 1 for goals, 0 otherwise (TODO: Nov 5)
+  - Shape: (748, 10) with action masking applied
+- **Reward Function**: R = 1 for goals (state 748), 0 otherwise (TODO: Nov 5)
 - **Success Rate Modeling**: Quality-quantity trade-off modeling (Method 3) (TODO: Nov 6)
 
 **Analysis Methods**:
@@ -320,7 +373,7 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
 
 ### Project Timeline (Nov 1-12, 2025)
 
-**Weekend 1: Foundation (Nov 1-2)**
+**Weekend 1: Foundation (Nov 1-2)** ✅ COMPLETE!
 - ✅ Saturday Nov 1 (COMPLETED):
   - ✅ Project skeleton creation and setup verification (`Project/` directory structure)
   - ✅ Data exploration and structure understanding (Chapter 2 in notebook)
@@ -333,10 +386,20 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
   - ✅ Extract and classify all passes from Premier League season (267,616 passes after filtering)
   - **Final Dataset**: 378 matches, 267,616 passes, 79.20% overall success rate
   
-- Sunday Nov 2 (8-10h):
-  - Map passes to (state_from, action, state_to) tuples
-  - Visualize pass distributions and validate classifications
-  - State coverage analysis and sparsity checks
+- ✅ Sunday Nov 2 (COMPLETED - ALL FOUNDATION WORK DONE!):
+  - ✅ Fixed shot extraction (lead_to_goal column → 12.34% goal rate, 1,071 goals)
+  - ✅ Added carry extraction (184,080 carries, 91.6% success rate)
+  - ✅ Implemented 3-way action combination (passes + shots + carries)
+  - ✅ Expanded action space to 10 actions (added carry as action 9)
+  - ✅ Defined absorbing states (goal, no_goal, loss_possession)
+  - ✅ Implemented action availability masking (shooting >30m, edge constraints)
+  - ✅ Map all actions to (state_from, action, state_to) tuples (460,373 actions)
+  - ✅ Visualize action distributions with 3-panel heatmaps (passes, shots, carries)
+  - ✅ State coverage analysis: 87.4% coverage (6,537 / 7,480 pairs observed)
+  - ✅ Updated all notebook cells (Chapters 1-4) to include carries
+  - ✅ Validated complete pipeline with all 10 actions
+  - **Final Encoded Dataset**: 460,373 actions across 748 states with masking applied
+  - **Saved**: `data/actions_encoded.parquet` ready for MDP construction
 
 **Week 2: MDP Construction (Nov 3-7)**
 - Monday Nov 3 (2-3h): Transition probability estimation with Laplace smoothing
@@ -385,12 +448,17 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
 
 ### Data Specifications
 - **Source**: PremierLeague_data/2024/dynamic/*.parquet (event data)
-- **Scale**: 378 matches, 267,616 passes after filtering (79.20% success rate)
+- **Scale**: 378 matches, 460,373 total actions after filtering
+  - **Passes**: 267,616 (58.1%, 79.20% success rate)
+  - **Shots**: 8,677 (1.9%, 12.34% goal rate = 1,071 goals)
+  - **Carries**: 184,080 (40.0%, 91.6% success rate, mean distance 8.53m)
 - **Filtering Applied**:
   - ✅ Event type: `player_possession` only
   - ✅ Zero-distance passes removed (91,504 ball controls filtered out)
   - ✅ Clearances removed (3,733 `end_type == 'clearance'` filtered out)
   - ✅ Coordinates normalized (all teams attack left→right, 0→105m)
+  - ✅ Shots fixed: using `lead_to_goal` column for goal detection
+  - ✅ Carries extracted: using `carry=True` flag with `end_type` success indicator
 - **Pass Type Distribution** (after filtering):
   - short_lateral: 73.46% (196,580 passes, 81.76% success)
   - medium_forward: 6.14% (16,422 passes, 71.01% success)
@@ -400,8 +468,27 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
   - medium_lateral: 2.20% (5,894 passes, 77.94% success)
   - long_forward: 1.13% (3,034 passes, 60.15% success)
   - long_backward: 1.10% (2,955 passes, 58.88% success)
-- **Data Sparsity**: 748 states × 9 actions = 6,732 pairs → ~40 observations per pair (good coverage expected)
-- **Key Insight**: Zone context matters more than direction (backward passes: 49.7% success in defensive third vs 79.2% in attacking third)
+- **Action Distribution** (all 10 actions):
+  - Action 1 (short_lateral): 42.70% (196,580 actions)
+  - Action 9 (carry): 39.98% (184,080 actions)
+  - Action 5 (medium_forward): 3.57% (16,422 actions)
+  - Action 3 (medium_backward): 3.45% (15,890 actions)
+  - Action 2 (short_forward): 2.94% (13,536 actions)
+  - Action 0 (short_backward): 2.89% (13,305 actions)
+  - Action 8 (shoot): 1.88% (8,677 actions)
+  - Action 4 (medium_lateral): 1.28% (5,894 actions)
+  - Action 7 (long_forward): 0.66% (3,034 actions)
+  - Action 6 (long_backward): 0.64% (2,955 actions)
+- **State-Action Coverage**: 
+  - 6,537 unique (state, action) pairs observed
+  - Theoretical maximum: 748 states × 10 actions = 7,480 pairs
+  - Coverage: 87.4% (excellent for MDP construction)
+  - After masking: 6,820 valid pairs (660 masked as impossible)
+  - Mean observations per pair: 70.4 (well above sparsity threshold)
+  - Well-covered pairs (≥10 obs): 4,339 (66.4%)
+- **Data Sparsity**: Significantly reduced by action masking (8.82% reduction in state-action space)
+- **Key Insight**: Carries are nearly as common as passes (40% vs 58%), making them essential for realistic modeling
+- **Tactical Insights**: Zone context matters more than direction (backward passes: 49.7% success in defensive third vs 79.2% in attacking third)
 
 ### Success Criteria
 1. ✅ Complete MDP learned from Premier League data
