@@ -210,14 +210,15 @@ As the student progresses:
 
 ---
 
-**Last Updated**: November 2, 2025 (End of Day)  
+**Last Updated**: November 3, 2025 (Evening)  
 **Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
 **Hardware Status**: ✅ RAM Upgraded - No Memory Constraints  
-**Weekend 1 Progress**: ✅ COMPLETE! All foundation tasks done + carries integration + action masking (significantly ahead of schedule!)
+**Week 1 Progress**: ✅ Mon-Wed COMPLETE! MDP construction + xG model with Bayesian shrinkage (3 days ahead!)  
+**Current Phase**: 🔍 DEBUGGING - Manual validation of Section 5 results (Thu-Fri)
 
 ---
 
-## 📁 Project File Structure (Nov 1, 2025)
+## 📁 Project File Structure (Nov 3, 2025)
 
 ```
 Project/
@@ -235,40 +236,66 @@ Project/
 │   │   ├── classify_pass_direction()  # forward dx>5, backward dx<-5, lateral |dx|≤5
 │   │   └── classify_pass_type()  # 8 pass types + filtering
 │   │
-│   └── state_action.py         # ✅ COMPLETE: MDP state/action space + masking (400 lines)
-│       ├── ACTION_NAMES  # Dict mapping 0-9 to action names (10 actions now!)
-│       ├── ABSORBING_STATES  # ✅ NEW: goal, no_goal, loss_possession definitions
-│       ├── FieldGrid     # 22×34 grid discretization class
-│       ├── add_state_action_encoding()  # ✅ Updated: handles carries (action=9)
-│       ├── create_action_availability_mask()  # ✅ NEW: shooting/edge constraints
-│       └── get_available_actions()  # ✅ NEW: query helper for masked actions
+│   ├── state_action.py         # ✅ COMPLETE: MDP state/action space + masking (400 lines)
+│   │   ├── ACTION_NAMES  # Dict mapping 0-9 to action names (10 actions now!)
+│   │   ├── ABSORBING_STATES  # ✅ NEW: goal, no_goal, loss_possession definitions
+│   │   ├── FieldGrid     # 22×34 grid discretization class
+│   │   ├── add_state_action_encoding()  # ✅ Updated: handles carries (action=9)
+│   │   ├── create_action_availability_mask()  # ✅ NEW: shooting/edge constraints
+│   │   └── get_available_actions()  # ✅ NEW: query helper for masked actions
+│   │
+│   └── xg_model.py             # ✅ COMPLETE: Position-based xG with Bayesian shrinkage (172 lines)
+│       ├── calculate_goal_angle()  # Viewing angle to goal (posts at x=105m)
+│       ├── geometric_xg_model()    # Power law xG from angle (calibrated to penalty spot)
+│       └── apply_bayesian_shrinkage()  # Smooths sparse shooting data (α=10)
 │
-├── pass_decision_analysis.ipynb  # ✅ CHAPTERS 1-4 COMPLETE (41 cells executed)
+├── data/
+│   ├── actions_encoded.parquet      # ✅ 460K actions with state encoding
+│   └── team_mdps/                   # ✅ 20 teams × 3 files = 60 MDP matrices
+│       ├── P_*.npy  # Transition probabilities (20 files)
+│       ├── R_*.npy  # Reward matrices (20 files)
+│       └── pi_*.npy # Optimal policies (20 files)
+│
+├── outputs/
+│   └── figures/
+│       ├── bayesian_smoothing_comparison.png  # ✅ Empirical vs smoothed xG
+│       └── ... (various MDP visualizations)
+│
+├── pass_decision_analysis.ipynb  # ✅ SECTIONS 1-5 COMPLETE (70+ cells)
 │   ├── Section 1: Imports (with module reloading)
 │   ├── Section 2: Data Exploration & Validation
 │   │   ├── 2.1: Load events (1.8M events)
 │   │   ├── 2.2: Extract passes (359K passes)
-│   │   ├── 2.3: Extract shots (8.7K shots, 12.34% goal rate)  # ✅ Fixed
-│   │   ├── 2.4: Extract carries (184K carries, 91.6% success)  # ✅ NEW
-│   │   ├── 2.5: Combine actions (460K total actions)  # ✅ Updated
+│   │   ├── 2.3: Extract shots (8.7K shots, 12.34% goal rate)
+│   │   ├── 2.4: Extract carries (184K carries, 91.6% success)
+│   │   ├── 2.5: Combine actions (460K total actions)
 │   │   ├── 2.6: Coordinate transformation
 │   │   ├── 2.7: Pass classification (8 types)
-│   │   ├── 2.8: Statistics with carries included  # ✅ Updated
-│   │   ├── 2.9: Visualizations (passes + shots + carries)  # ✅ Updated
+│   │   ├── 2.8: Statistics with carries included
+│   │   ├── 2.9: Visualizations (passes + shots + carries)
 │   │   ├── 2.10: Zone analysis (defensive/middle/attacking breakdown)
-│   │   └── 2.11: Final summary (460K actions ready)  # ✅ Updated
+│   │   └── 2.11: Final summary (460K actions ready)
 │   │
-│   ├── Section 3: Action Extraction Summary (carries included)  # ✅ Updated
+│   ├── Section 3: Action Extraction Summary
 │   │
-│   └── Section 4: State-Action Encoding  # ✅ COMPLETE
-│       ├── 4.1: Create field grid (22×34 = 748 states)
-│       ├── 4.2: Encode all actions (passes + shots + carries)  # ✅ 10 actions
-│       ├── 4.3: Action availability mask implementation  # ✅ NEW
-│       ├── 4.4: State-action pair analysis (87.4% coverage)  # ✅ Updated
-│       ├── 4.5: Transition analysis
-│       ├── 4.6: Spatial coverage (3 heatmaps: passes, shots, carries)  # ✅ Updated
-│       ├── 4.7: Zone-based action distribution (includes carries)  # ✅ Updated
-│       └── 4.8: Chapter 4 summary with masking stats  # ✅ Updated
+│   ├── Section 4: State-Action Encoding
+│   │   ├── 4.1: Create field grid (22×34 = 748 states)
+│   │   ├── 4.2: Encode all actions (passes + shots + carries)
+│   │   ├── 4.3: Action availability mask implementation
+│   │   ├── 4.4: State-action pair analysis (87.4% coverage)
+│   │   ├── 4.5: Transition analysis
+│   │   ├── 4.6: Spatial coverage (3 heatmaps: passes, shots, carries)
+│   │   ├── 4.7: Zone-based action distribution
+│   │   └── 4.8: Chapter 4 summary with masking stats
+│   │
+│   └── Section 5: MDP Construction & Analysis  # ✅ COMPLETE (needs validation)
+│       ├── 5.1: Build MDP for all 20 teams (P, R, π matrices)
+│       ├── 5.2: Visualize Man City spatial policy
+│       ├── 5.3: Sparse data analysis (shooting probabilities)
+│       ├── 5.4: Smoothing comparison (threshold vs Bayesian)
+│       ├── 5.5: Position-based xG model (geometric)
+│       ├── 5.6: Bayesian shrinkage implementation
+│       └── 5.7: Comparison visualization (before/after smoothing)
 │
 ├── diagnostic_scripts/  # Validation scripts created during development
 │   ├── test_clearance_filter.py
@@ -300,19 +327,35 @@ Project/
   - 0-7: Pass types (short/medium/long × backward/lateral/forward)
   - 8: shoot
   - 9: carry (NEW!)
-- **Action Masking**: NEW - Implemented to reduce sparsity
+- **Action Masking**: Implemented to reduce sparsity
   - Shooting disabled when x < 75m (>30m from goal) → 528 states (70.59%) masked
   - Backward passes disabled at col=0 (defensive edge) → 22 states masked
   - Forward passes disabled at col=33 (attacking edge) → 22 states masked
   - Total: 660 (state, action) pairs masked (8.82% reduction in state-action space)
   - Impact: Allows smaller Laplace smoothing (α=2-3 instead of α=5-10)
-- **Absorbing states**: Defined (not yet in transition matrix):
+- **Absorbing states**: Defined and implemented in MDP:
   - State 748: goal (successful shots)
   - State 749: no_goal (failed shots)
   - State 750: loss_possession (failed passes/carries)
 
+**MDP Construction** (`pass_decision_analysis.ipynb` Section 5):
+- ✅ Built MDPs for all 20 Premier League teams
+- ✅ Transition matrices P: (751, 10, 751) - includes 3 absorbing states
+- ✅ Reward matrices R: (751, 10) - rewards only for goals
+- ✅ Optimal policies π: (748, 10) - computed via value iteration
+- ✅ All matrices saved to `data/team_mdps/` (60 .npy files total)
+
+**Position-based xG Model** (`src/xg_model.py`):
+- ✅ Geometric model using viewing angle to goal
+- ✅ Goal location: x=105m, y=34m (corrected from earlier error)
+- ✅ Power law calibration: xG = 0.76 × (angle/36.8°)^1.5
+- ✅ Penalty spot (94m, 34m) → 36.8° → 76% xG (realistic)
+- ✅ Shooting constraint: xG=0 for x<75m (>30m from goal)
+- ✅ Bayesian shrinkage: P_smoothed = (α·P_prior + n·P_empirical)/(α + n)
+- ✅ Prior strength α=10 balances sparse data smoothing with empirical preservation
+
 **Notebook Progress** (`pass_decision_analysis.ipynb`):
-- **Chapters 1-4 fully executed** with all validations
+- **Sections 1-5 fully executed** with all validations
 - **Total actions**: 460,373 (up from 276,293)
   - Passes: 267,616 (58.1%)
   - Shots: 8,677 (1.9%, 1,071 goals = 12.34%)
@@ -320,7 +363,8 @@ Project/
 - **State-action coverage**: 87.4% (6,537 / 7,480 possible pairs)
 - **Visualizations**: 3-panel heatmaps (passes in YlOrRd, shots in Reds, carries in Blues)
 - Zone analysis reveals tactical patterns (defensive backward 49.7%, attacking forward 50.2%)
-- Ready for MDP transition matrix construction (Chapter 5)
+- **MDP matrices saved**: 20 teams × 3 files (P, R, π) = 60 .npy files
+- **Ready for**: Pass success modeling (Van Roy Method 3), fundamental matrix, policy analysis
 
 ---
 
@@ -358,13 +402,16 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
   - Backward passes masked at defensive edge (col=0) → 22 states  
   - Forward passes masked at attacking edge (col=33) → 22 states
   - Total: 660 invalid (state, action) pairs removed
-- **Transition Function**: P(s, a, s') to be learned from event data with Laplace smoothing (TODO: Nov 3)
+- **Transition Function**: ✅ COMPLETE - Learned from event data with Laplace smoothing (α=2)
   - Shape: (751, 10, 751) - 748 field states + 3 absorbing → 751 total
   - Absorbing transitions: successful shots → 748, failed shots → 749, failed passes/carries → 750
-- **Policy**: π(a | s) = probability of selecting action a in state s (TODO: Nov 4)
+  - Built for all 20 Premier League teams
+- **Policy**: ✅ COMPLETE - π(a | s) = probability of selecting action a in state s
   - Shape: (748, 10) with action masking applied
-- **Reward Function**: R = 1 for goals (state 748), 0 otherwise (TODO: Nov 5)
-- **Success Rate Modeling**: Quality-quantity trade-off modeling (Method 3) (TODO: Nov 6)
+  - Learned empirically from observed team behavior
+- **Reward Function**: ✅ COMPLETE - R = 1 for goals (state 748), 0 otherwise
+  - Shape: (751, 10) reward matrix per team
+- **Success Rate Modeling**: Quality-quantity trade-off modeling (Method 3) (TODO: Nov 7-8)
 
 **Analysis Methods**:
 1. **Fundamental Matrix Approach**: Compute expected goals under different policies
@@ -401,37 +448,60 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
   - **Final Encoded Dataset**: 460,373 actions across 748 states with masking applied
   - **Saved**: `data/actions_encoded.parquet` ready for MDP construction
 
-**Week 2: MDP Construction (Nov 3-7)**
-- Monday Nov 3 (2-3h): Transition probability estimation with Laplace smoothing
-- Tuesday Nov 4 (2-3h): Policy estimation (action selection probabilities per state)
-- Wednesday Nov 5 (2-3h): Position-based xG model for shooting
-- Thursday Nov 6 (2-3h): Pass success rate modeling with quality distribution analysis
-- Friday Nov 7 (2-3h): Fundamental matrix computation and validation
+**Week 2: MDP Construction & Validation (Nov 3-8)**
+- ✅ Monday Nov 3 (COMPLETED): MDP construction for all 20 teams
+  - Built transition matrices P, reward matrices R, optimal policies π
+  - Saved all team MDPs to disk (60 .npy files)
+  - Visualized Man City spatial policy
+  
+- ✅ Tuesday Nov 4 (COMPLETED): Sparse data analysis & smoothing comparison
+  - Identified sparse shooting data problem
+  - Compared smoothing approaches (threshold vs Bayesian)
+  - Selected Bayesian shrinkage with α=10
+  
+- ✅ Wednesday Nov 5 (COMPLETED): Position-based xG model
+  - Built geometric xG model using viewing angle
+  - Applied Bayesian shrinkage to shooting probabilities
+  - Created src/xg_model.py utility file
+  - Generated comparison visualizations
+  
+- 🔍 Thursday Nov 6 (IN PROGRESS): Debugging & validation - Day 1
+  - Manual review of Section 5 MDP results
+  - Validate transition probabilities and state mappings
+  - Check coordinate system consistency
+  - Verify shooting constraints and action masking
+  
+- Friday Nov 7: Debugging & validation - Day 2
+  - Address any issues found in manual review
+  - Re-run MDP construction if needed
+  - Validate smoothed probabilities
+  - Prepare for fundamental matrix computation
 
-**Weekend 2: Analysis & Policy Experiments (Nov 8-9)**
-- Saturday Nov 8 (8-10h):
-  - Implement quality-quantity trade-off modeling for pass success rates
+- Saturday Nov 8: Buffer day / catch-up if needed
+
+**Weekend 2: Analysis & Policy Experiments (Nov 9-10)**
+- Sunday Nov 9 (8-10h):
+  - Implement quality-quantity trade-off modeling for pass success rates (Van Roy Method 3)
+  - Fundamental matrix computation (expected goals under different policies)
   - "What should players do?" analysis: optimal action per zone
   - Generate heat maps showing optimal pass types
-  - Compare immediate shooting vs. different pass sequences
   
-- Sunday Nov 9 (8-10h):
+- Monday Nov 10 (8-10h):
+  - Compare immediate shooting vs. different pass sequences
   - Counterfactual policy analysis: "What if?" scenarios
   - Modify policies (increase/decrease specific pass types in zones)
   - Compute expected goals under altered policies
   - Identify strategic insights and tactical recommendations
 
-**Final Push (Nov 10-12)**
-- Monday Nov 10 (3-4h):
+**Final Push (Nov 11-12)**
+- Monday Nov 11 (3-4h):
   - Visualization refinement and tactical interpretation
   - Create compelling figures for presentation
   - Draft findings and insights
   
-- Tuesday Nov 11 (4-6h):
+- Tuesday Nov 12 (4-6h):
   - Complete write-up with methodology, results, discussion
   - Final validation and code cleanup
-  
-- Wednesday Nov 12 (2-4h):
   - Prepare submission materials
   - Final review and polish
   - ✅ PROJECT READY FOR SUBMISSION
