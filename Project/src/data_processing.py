@@ -435,47 +435,40 @@ def extract_shot_events(events: pd.DataFrame) -> pd.DataFrame:
         
     Notes
     -----
-    Shots are identified by end_type='shot' in player_possession events.
-    Success is determined by whether the shot resulted in a goal.
+    According to SkillCorner documentation:
+    - Shot events are identified by: event_type=='player_possession' AND end_type=='shot'
+    - lead_to_goal (boolean) indicates if the shot resulted in a goal
+    - All four coordinates (x_start, y_start, x_end, y_end) are available for shots
+    - x_end/y_end represent the shot location (where the shot was taken from)
+    - These coordinates are essential for MDP state encoding and xG modeling
     """
     print(f"Extracting shot events from {len(events):,} total events...")
     
     # Filter to player_possession events with end_type='shot'
+    if 'end_type' not in events.columns:
+        raise ValueError("'end_type' column not found in events data!")
+    
     shots = events[
         (events['event_type'] == 'player_possession') & 
         (events['end_type'] == 'shot')
     ].copy()
-    print(f"  Found {len(shots):,} shot events")
+    print(f"  Found {len(shots):,} shot events (end_type='shot')")
     
-    # Filter to events with valid start coordinates (end coords not needed for shots)
-    required_cols = ['x_start', 'y_start']
+    # Filter to events with complete coordinate information
+    # x_start, y_start, x_end, y_end are all needed (shot location for MDP)
+    required_cols = ['x_start', 'y_start', 'x_end', 'y_end']
     missing_coords = shots[required_cols].isna().any(axis=1)
     
     if missing_coords.sum() > 0:
         print(f"  Removing {missing_coords.sum():,} shots with missing coordinates")
         shots = shots[~missing_coords].copy()
     
-    # Determine shot success (goal vs no_goal)
-    # Check if there's a goal-related field
-    if 'lead_to_goal' in shots.columns:
-        # SkillCorner data uses lead_to_goal boolean column
-        shots['success'] = shots['lead_to_goal'].fillna(False).astype(int)
-    elif 'is_goal' in shots.columns:
-        shots['success'] = shots['is_goal'].astype(int)
-    elif 'pass_outcome' in shots.columns:
-        # If pass_outcome exists, check for 'goal' value
-        shots['success'] = (shots['pass_outcome'] == 'goal').astype(int)
-    else:
-        # Default: assume we need to infer from subsequent events or other fields
-        # For now, set to 0 (we'll need to cross-reference with goal events)
-        print("  ⚠️  No explicit goal indicator found, setting all shots to unsuccessful")
-        print("     (This may need refinement based on actual data structure)")
-        shots['success'] = 0
+    # Add success indicator using lead_to_goal field
+    if 'lead_to_goal' not in shots.columns:
+        raise ValueError("'lead_to_goal' column not found in shot events!")
     
-    # Add dummy end coordinates (shots end at goal location)
-    # We'll use the goal center as a proxy
-    shots['x_end'] = PITCH_LENGTH  # Goal line
-    shots['y_end'] = PITCH_WIDTH / 2  # Center of goal
+    # SkillCorner provides lead_to_goal as boolean (True/False)
+    shots['success'] = shots['lead_to_goal'].fillna(False).astype(int)
     
     # Print success breakdown
     goals = shots['success'].sum()
