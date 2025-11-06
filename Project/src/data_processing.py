@@ -497,20 +497,34 @@ def extract_carry_events(events: pd.DataFrame) -> pd.DataFrame:
         
     Notes
     -----
-    Carries are identified by carry=True in player_possession events.
-    Success is determined by end_type: successful if ends in 'pass' or 'shot',
-    failed if ends in 'possession_loss'.
+    According to SkillCorner documentation:
+    - Carry events are identified by: event_type=='player_possession' AND carry==True
+    - Carries represent dribbling/running with the ball from x_start/y_start to x_end/y_end
+    - All four coordinates (x_start, y_start, x_end, y_end) are available for carries
+    - Success is determined by end_type:
+      * Successful: ends in 'pass' or 'shot' (maintained possession)
+      * Unsuccessful: ends in 'possession_loss', 'foul_suffered', 'clearance', etc.
+    
+    IMPORTANT: Many carries OVERLAP with passes and shots:
+    - ~89% of carries end in a pass (carry=True AND end_type='pass')
+    - ~2% of carries end in a shot (carry=True AND end_type='shot')
+    - These events are BOTH a carry AND a pass/shot
+    - When combining actions for MDP, we need to avoid double-counting
     """
     print(f"Extracting carry events from {len(events):,} total events...")
     
     # Filter to player_possession events with carry=True
+    if 'carry' not in events.columns:
+        raise ValueError("'carry' column not found in events data!")
+    
     carries = events[
         (events['event_type'] == 'player_possession') & 
         (events['carry'] == True)
     ].copy()
-    print(f"  Found {len(carries):,} carry events")
+    print(f"  Found {len(carries):,} carry events (carry=True)")
     
-    # Filter to events with valid coordinates
+    # Filter to events with complete coordinate information
+    # x_start, y_start, x_end, y_end represent the dribble path
     required_cols = ['x_start', 'y_start', 'x_end', 'y_end']
     missing_coords = carries[required_cols].isna().any(axis=1)
     
@@ -518,16 +532,29 @@ def extract_carry_events(events: pd.DataFrame) -> pd.DataFrame:
         print(f"  Removing {missing_coords.sum():,} carries with missing coordinates")
         carries = carries[~missing_coords].copy()
     
-    # Determine carry success based on end_type
-    # Successful if ends in pass or shot, failed if possession_loss
+    # Add success indicator based on end_type
+    if 'end_type' not in carries.columns:
+        raise ValueError("'end_type' column not found in carry events!")
+    
+    # Successful if player kept possession (ended in pass or shot)
+    # Unsuccessful if player lost possession (possession_loss, foul_suffered, etc.)
     carries['success'] = carries['end_type'].isin(['pass', 'shot']).astype(int)
     
-    # Print success breakdown
+    # Print success breakdown and overlap statistics
     successful = carries['success'].sum()
-    failed = len(carries) - successful
+    unsuccessful = len(carries) - successful
+    
+    # Breakdown by end_type
+    end_pass = (carries['end_type'] == 'pass').sum()
+    end_shot = (carries['end_type'] == 'shot').sum()
+    end_loss = (carries['end_type'] == 'possession_loss').sum()
+    
     print(f"  Carry outcomes:")
-    print(f"    Successful (ended in pass/shot): {successful:6,} ({successful/len(carries):5.1%})")
-    print(f"    Failed (possession lost):        {failed:6,} ({failed/len(carries):5.1%})")
+    print(f"    Successful:   {successful:6,} ({successful/len(carries):5.1%})")
+    print(f"      → ended in pass: {end_pass:5,} ({end_pass/len(carries):5.1%})")
+    print(f"      → ended in shot: {end_shot:5,} ({end_shot/len(carries):5.1%})")
+    print(f"    Unsuccessful: {unsuccessful:6,} ({unsuccessful/len(carries):5.1%})")
+    print(f"      → possession_loss: {end_loss:5,} ({end_loss/len(carries):5.1%})")
     
     print(f"✅ Extracted {len(carries):,} carry events")
     
