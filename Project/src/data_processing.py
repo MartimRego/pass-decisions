@@ -7,6 +7,28 @@ Premier League event data.
 
 Author: Your Name
 Date: November 2025
+
+IMPORTANT CHANGES (Nov 6, 2025):
+---------------------------------
+Pass direction classification now uses ANGLE-BASED method following SkillCorner
+documentation (page 24) instead of dx-threshold method:
+
+OLD METHOD (dx-threshold):
+- Forward: dx > 5m
+- Backward: dx < -5m  
+- Lateral: |dx| <= 5m
+
+NEW METHOD (angle-based):
+- Forward: angle between -45° and +45°
+- Backward: angle < -135° or > 135°
+- Lateral: angle between 45° and 135° OR between -135° and -45°
+  (merges SkillCorner's 'sideway_left' and 'sideway_right')
+
+This captures the actual trajectory of passes, not just horizontal displacement.
+Example: A pass with dx=4m, dy=20m is now correctly classified as 'lateral' 
+(angle=78.7°) instead of 'lateral' by threshold.
+
+See debug.ipynb for validation against SkillCorner's pass_direction field.
 """
 
 import pandas as pd
@@ -160,18 +182,22 @@ def load_match_metadata(
 
 def rescale_coordinates(
     df: pd.DataFrame,
-    x_cols: Tuple[str, str] = ("x_start", "x_end"),
-    y_cols: Tuple[str, str] = ("y_start", "y_end")
+    x_cols: Tuple[str, str] = ("x_end", "player_targeted_x_reception"),
+    y_cols: Tuple[str, str] = ("y_end", "player_targeted_y_reception")
 ) -> pd.DataFrame:
     """
     Rescale SkillCorner coordinates to FIFA pitch scale (0-105m x 0-68m).
+    
+    NOTE: x_end/y_end represent where the passer RELEASES the ball (pass origin),
+    and player_targeted_x_reception/y_reception is where the receiver gets it.
+    This gives us the actual PASS distance, not the passer's movement distance.
     
     Parameters
     ----------
     df : pd.DataFrame
         Event data with SkillCorner coordinates
     x_cols : tuple of str
-        Names of x coordinate columns (start, end)
+        Names of x coordinate columns (pass origin, pass destination)
     y_cols : tuple of str
         Names of y coordinate columns (start, end)
         
@@ -221,6 +247,14 @@ def normalize_attack_direction(df: pd.DataFrame) -> pd.DataFrame:
     The y-flip ensures tactical formations remain consistent when viewing
     from the attacking team's perspective.
     
+    Normalizes the following coordinate pairs (if present):
+    - x_start_rescaled → x_start_norm
+    - y_start_rescaled → y_start_norm
+    - x_end_rescaled → x_end_norm (pass origin)
+    - y_end_rescaled → y_end_norm
+    - player_targeted_x_reception_rescaled → player_targeted_x_reception_norm (pass destination)
+    - player_targeted_y_reception_rescaled → player_targeted_y_reception_norm
+    
     Examples
     --------
     >>> passes = rescale_coordinates(passes)
@@ -266,6 +300,22 @@ def normalize_attack_direction(df: pd.DataFrame) -> pd.DataFrame:
             df['y_end_rescaled']
         )
     
+    # Normalize player_targeted_x_reception_rescaled (pass destination)
+    if 'player_targeted_x_reception_rescaled' in df.columns:
+        df['player_targeted_x_reception_norm'] = np.where(
+            df['attacking_side'] == 'right_to_left',
+            PITCH_LENGTH - df['player_targeted_x_reception_rescaled'],
+            df['player_targeted_x_reception_rescaled']
+        )
+    
+    # Normalize player_targeted_y_reception_rescaled
+    if 'player_targeted_y_reception_rescaled' in df.columns:
+        df['player_targeted_y_reception_norm'] = np.where(
+            df['attacking_side'] == 'right_to_left',
+            PITCH_WIDTH - df['player_targeted_y_reception_rescaled'],
+            df['player_targeted_y_reception_rescaled']
+        )
+    
     # Report normalization stats
     n_flipped = (df['attacking_side'] == 'right_to_left').sum()
     n_total = len(df)
@@ -288,59 +338,81 @@ def extract_pass_events(events: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        Only pass events with complete coordinate information
+        Only pass events with complete coordinate information and success indicator
         
     Notes
     -----
-    SkillCorner uses 'player_possession' as the event type for passes.
-    We filter to events with valid start and end coordinates.
+    According to SkillCorner documentation:
+    - Pass events are identified by: event_type=='player_possession' AND end_type=='pass'
+    - pass_outcome indicates success: 'successful', 'unsuccessful', 'offside'
+    - Both successful and unsuccessful passes are included (if they have coordinates)
+    
+    Coordinate requirements:
+    - ALL passes need: x_start, y_start, x_end, y_end (pass origin)
+    - Successful passes also need: player_targeted_x_reception, player_targeted_y_reception (pass destination)
+    - Unsuccessful passes don't have reception coordinates (they're NULL)
+    
+    We filter out:
+    - Passes missing basic coordinates (x_start, y_start, x_end, y_end)
+    - Successful passes missing reception coordinates (small % of successful passes)
+    - Clearances are already excluded by the end_type=='pass' filter
     """
     print(f"Extracting pass events from {len(events):,} total events...")
     
-    # Filter to player_possession events (SkillCorner's pass events)
-    passes = events[events['event_type'] == 'player_possession'].copy()
-    print(f"  Found {len(passes):,} player_possession events")
+    # Filter to player_possession events that ended with a pass
+    # This correctly identifies ALL pass attempts (successful and unsuccessful)
+    if 'end_type' not in events.columns:
+        raise ValueError("'end_type' column not found in events data!")
+    
+    passes = events[
+        (events['event_type'] == 'player_possession') & 
+        (events['end_type'] == 'pass')
+    ].copy()
+    print(f"  Found {len(passes):,} pass events (end_type='pass')")
     
     # Filter to events with complete coordinate information
-    required_cols = ['x_start', 'y_start', 'x_end', 'y_end']
-    missing_coords = passes[required_cols].isna().any(axis=1)
+    # x_start, y_start, x_end, y_end are always needed (pass origin)
+    # For successful passes, we also need player_targeted_x/y_reception (pass destination)
+    required_basic_cols = ['x_start', 'y_start', 'x_end', 'y_end']
+    missing_basic = passes[required_basic_cols].isna().any(axis=1)
     
-    print(f"  Removing {missing_coords.sum():,} events with missing coordinates")
-    passes = passes[~missing_coords].copy()
+    if missing_basic.sum() > 0:
+        print(f"  Removing {missing_basic.sum():,} passes with missing start/end coordinates")
+        passes = passes[~missing_basic].copy()
     
-    # Filter out clearances (defensive actions, not tactical passes)
-    if 'end_type' in passes.columns:
-        clearances = passes['end_type'] == 'clearance'
-        print(f"  Removing {clearances.sum():,} clearances")
-        passes = passes[~clearances].copy()
-    
-    # Add success indicator - use pass_outcome field (more accurate than end_type)
+    # For successful passes, also filter out those missing reception coordinates
+    # (unsuccessful passes won't have these, so we only check successful ones)
     if 'pass_outcome' in passes.columns:
-        # SkillCorner provides: 'successful', 'unsuccessful', 'offside', etc.
-        passes['success'] = (passes['pass_outcome'] == 'successful').astype(int)
+        successful_mask = passes['pass_outcome'] == 'successful'
+        reception_cols = ['player_targeted_x_reception', 'player_targeted_y_reception']
         
-        # Print breakdown
-        outcome_counts = passes['pass_outcome'].value_counts()
-        successful_count = outcome_counts.get('successful', 0)
-        unsuccessful_count = outcome_counts.get('unsuccessful', 0)
-        offside_count = outcome_counts.get('offside', 0)
-        
-        print(f"  Pass outcomes:")
-        print(f"    Successful:   {successful_count:6,} ({successful_count/len(passes):5.1%})")
-        print(f"    Unsuccessful: {unsuccessful_count:6,} ({unsuccessful_count/len(passes):5.1%})")
-        if offside_count > 0:
-            print(f"    Offside:      {offside_count:6,} ({offside_count/len(passes):5.1%})")
-        
-    elif 'end_type' in passes.columns:
-        # Fallback: use end_type field if pass_outcome not available
-        # Successful if end_type is 'pass', 'carry', or 'shot'
-        success_outcomes = ['pass', 'carry', 'shot']
-        passes['success'] = passes['end_type'].isin(success_outcomes).astype(int)
-        print(f"  ⚠️  Using end_type for success (pass_outcome not available)")
-        print(f"  Success rate: {passes['success'].mean():.1%}")
-    else:
-        print("  ⚠️  No success indicator found, setting all to successful")
-        passes['success'] = 1
+        if all(col in passes.columns for col in reception_cols):
+            # Check which successful passes are missing reception coordinates
+            missing_reception = successful_mask & passes[reception_cols].isna().any(axis=1)
+            
+            if missing_reception.sum() > 0:
+                print(f"  Removing {missing_reception.sum():,} successful passes with missing reception coordinates")
+                print(f"  ({missing_reception.sum()/successful_mask.sum()*100:.2f}% of successful passes)")
+                passes = passes[~missing_reception].copy()
+    
+    # Add success indicator using pass_outcome field
+    if 'pass_outcome' not in passes.columns:
+        raise ValueError("'pass_outcome' column not found in pass events!")
+    
+    # SkillCorner provides: 'successful', 'unsuccessful', 'offside'
+    passes['success'] = (passes['pass_outcome'] == 'successful').astype(int)
+    
+    # Print breakdown
+    outcome_counts = passes['pass_outcome'].value_counts()
+    successful_count = outcome_counts.get('successful', 0)
+    unsuccessful_count = outcome_counts.get('unsuccessful', 0)
+    offside_count = outcome_counts.get('offside', 0)
+    
+    print(f"  Pass outcomes:")
+    print(f"    Successful:   {successful_count:6,} ({successful_count/len(passes):5.1%})")
+    print(f"    Unsuccessful: {unsuccessful_count:6,} ({unsuccessful_count/len(passes):5.1%})")
+    if offside_count > 0:
+        print(f"    Offside:      {offside_count:6,} ({offside_count/len(passes):5.1%})")
     
     print(f"✅ Extracted {len(passes):,} pass events")
     
@@ -594,20 +666,24 @@ def classify_pass_length(distance: pd.Series) -> pd.Series:
 
 def classify_pass_direction(
     dx: pd.Series,
-    forward_threshold: float = 5.0,
-    lateral_threshold: float = 5.0
+    dy: pd.Series
 ) -> pd.Series:
     """
-    Classify pass direction into forward/lateral/backward.
+    Classify pass direction into forward/lateral/backward using angle-based method.
+    
+    Follows SkillCorner's angle-based classification (see documentation page 24):
+    - Forward: angle between -45° and +45°
+    - Backward: angle below -135° or above 135°
+    - Sideway Left: angle between 45° and 135°
+    - Sideway Right: angle between -135° and -45°
+    - Lateral: merge of Sideway Left and Sideway Right
     
     Parameters
     ----------
     dx : pd.Series
         Change in x coordinate (horizontal, progressive direction)
-    forward_threshold : float, default=5.0
-        Minimum dx to be considered forward (meters)
-    lateral_threshold : float, default=5.0
-        Maximum abs(dx) to be considered lateral (meters)
+    dy : pd.Series
+        Change in y coordinate (lateral direction)
         
     Returns
     -------
@@ -616,14 +692,35 @@ def classify_pass_direction(
         
     Notes
     -----
-    Classification logic:
-    - forward: dx > forward_threshold (5m)
-    - backward: dx < -forward_threshold (-5m)
-    - lateral: abs(dx) <= lateral_threshold (within ±5m)
+    The angle is calculated as arctan2(dy, dx) relative to the direction of attack
+    (positive x-axis toward goal). This captures the actual trajectory of the pass,
+    not just horizontal displacement.
+    
+    Examples
+    --------
+    >>> # Pure forward pass (dx=10, dy=0) → 0° → 'forward'
+    >>> # Diagonal forward pass (dx=10, dy=10) → 45° → 'forward' (at boundary)
+    >>> # Lateral pass (dx=5, dy=20) → 76° → 'lateral'
+    >>> # Backward pass (dx=-15, dy=0) → 180° → 'backward'
     """
-    direction = pd.Series('lateral', index=dx.index)
-    direction[dx > forward_threshold] = 'forward'
-    direction[dx < -forward_threshold] = 'backward'
+    # Calculate angle of pass vector relative to direction of attack (positive x-axis)
+    pass_angle_rad = np.arctan2(dy, dx)
+    pass_angle_deg = np.degrees(pass_angle_rad)  # Range: -180° to +180°
+    
+    # Classify using SkillCorner's angle thresholds
+    direction = pd.Series('lateral', index=dx.index, dtype='object')
+    
+    # Forward: -45° to +45°
+    forward_mask = (pass_angle_deg >= -45) & (pass_angle_deg <= 45)
+    direction[forward_mask] = 'forward'
+    
+    # Backward: < -135° or > 135°
+    backward_mask = (pass_angle_deg < -135) | (pass_angle_deg > 135)
+    direction[backward_mask] = 'backward'
+    
+    # Lateral: everything else (45° to 135° and -135° to -45°)
+    # Already initialized as 'lateral', so sideway_left and sideway_right are merged
+    
     return direction
 
 
@@ -668,9 +765,21 @@ def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     passes = passes.copy()
     
     # Compute pass distance and direction changes
-    passes['dx'] = passes['x_end_norm'] - passes['x_start_norm']
-    passes['dy'] = passes['y_end_norm'] - passes['y_start_norm']
+    # NOTE: x_end/y_end = pass origin (where ball is released)
+    #       player_targeted_x_reception/y_reception = pass destination (where receiver gets it)
+    # For unsuccessful passes, reception coords are NULL - filter those out later if needed
+    passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']
+    passes['dy'] = passes['player_targeted_y_reception_norm'] - passes['y_end_norm']
     passes['pass_distance'] = np.sqrt(passes['dx']**2 + passes['dy']**2)
+    
+    # Filter out passes with NULL reception coordinates (unsuccessful passes without target location)
+    n_before_null = len(passes)
+    null_reception = passes[['player_targeted_x_reception_norm', 'player_targeted_y_reception_norm']].isna().any(axis=1)
+    if null_reception.any():
+        print(f"🔧 Filtering passes with NULL reception coordinates:")
+        print(f"   (These are unsuccessful passes where target location is unknown)")
+        print(f"   Removed: {null_reception.sum():,} ({null_reception.sum()/n_before_null*100:.2f}%)")
+        passes = passes[~null_reception].copy()
     
     # Filter out zero-distance passes (ball controls)
     n_before = len(passes)
@@ -684,7 +793,7 @@ def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     
     # Classify length and direction
     passes['pass_length'] = classify_pass_length(passes['pass_distance'])
-    passes['pass_direction'] = classify_pass_direction(passes['dx'])
+    passes['pass_direction'] = classify_pass_direction(passes['dx'], passes['dy'])
     
     # Combine into pass_type
     passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)

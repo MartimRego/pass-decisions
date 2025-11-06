@@ -73,7 +73,7 @@ print(f"{'='*70}")
 from data_processing import classify_pass_direction, classify_pass_length
 
 passes['pass_length'] = classify_pass_length(passes['distance'])
-passes['pass_direction'] = classify_pass_direction(passes['dx'])
+passes['pass_direction'] = classify_pass_direction(passes['dx'], passes['dy'])
 
 # Overall stats
 print(f"\nTotal passes: {len(passes):,}")

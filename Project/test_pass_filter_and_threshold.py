@@ -69,7 +69,7 @@ def main():
     print(f"{'='*60}")
     
     passes_filtered['pass_length'] = classify_pass_length_10m(passes_filtered['pass_distance'])
-    passes_filtered['pass_direction'] = classify_pass_direction(passes_filtered['dx'])
+    passes_filtered['pass_direction'] = classify_pass_direction(passes_filtered['dx'], passes_filtered['dy'])
     passes_filtered['pass_type'] = passes_filtered['pass_length'].astype(str) + '_' + passes_filtered['pass_direction'].astype(str)
     
     print(f"\nTotal passes (filtered): {len(passes_filtered):,}")

@@ -1,0 +1,5895 @@
+Dynamic Events
+CSV Specifications
+
+2025/02/16
+
+Changelog Since 2024/07/12
+1/ Addition of one New Out of Possession Dynamic Event: On-Ball Engagement
+2/ Addition of Phase of Play information.
+3/ Reordering of the columns and bug correction.
+●​ To include phases of play properly we reorder the columns in the csv file that is
+delivered.
+●​ We noticed that previously the values for the game_interruption_before,
+game_interruption_before_id were inverted with game_interruption_after,
+game_interruption_after_id. We have corrected this issue in the new version.
+
+Changelog Since 2024/02/15
+1/ Addition of two New Dynamic Events: Passing Options and Player Possessions
+2/ Changes to Off-Ball runs Dynamic Event
+New data points including
+●​ Positions (LWB, LB, CD, ...) of the player in possession and the player performing the
+off-ball runs.
+●​ Game states (winning, losing, drawing) and team scores at the moment of the event.
+●​ last_defensive_line_height (distance of the last defender from their own goal).
+Renaming of attributes
+Former name
+
+New name
+
+player_possession_frame_start
+
+associated_player_possession_frame_start
+
+passing_option
+
+predicted_passing_option
+
+passing_option_start
+
+passing_option_at_start
+
+simultaneous_runs
+
+n_simultaneous_runs
+
+opponents_ahead_start
+
+n_opponents_ahead_start
+
+opponents_ahead_end
+
+n_opponents_ahead_end
+
+opponents_overtaken
+
+n_opponents_overtaken
+
+Give and Go
+
+Page 2
+
+Previously, we classified as give_and_go any off-ball runs that started within 2 seconds after
+a pass from the same player.
+Based on feedback we have received we have decided to restrict it to off-ball runs of subtype
+behind, cross_receiver, overlap, pulling_half_space, pulling_wide, run_ahead_of_the_ball,
+underlap, support (for support run we also impose that it starts in the attacking third and in a
+half_space/the central channel).
+As a consequence, coming_short, dropping_off and some support off-ball runs are not taken
+into account to determine whether there is a give and go or not.
+Event filtering
+Previously, we only considered off-ball runs where we were able to match the tracking data
+with the end of the associated player possession.
+Now, we include cases where tracking data could not be matched. We provide the field
+is_player_possession_end_matched to indicate whether the end of the possession was
+successfully matched.
+
+Page 3
+
+Table Of Content
+Changelog Since 2024/07/12..............................................................................................2
+Changelog Since 2024/02/15..............................................................................................2
+Table Of Content................................................................................................................. 4
+Tracking Data......................................................................................................................6
+Event Definitions................................................................................................................. 6
+Off-ball Run............................................................................................................................... 6
+Passing Option......................................................................................................................... 7
+On-ball Engagement.................................................................................................................8
+Relationship Between Events.............................................................................................. 8
+Merging Consecutive Events............................................................................................... 9
+Window Extension.............................................................................................................10
+Passing Moment Frame Selection..................................................................................... 10
+Model Used.......................................................................................................................10
+Direction Of Play And Pitch Coordinates............................................................................11
+Event Matching................................................................................................................. 11
+Empty Attribute Values..................................................................................................... 12
+Line Breaking Passes........................................................................................................12
+Defensive Structure................................................................................................................12
+Templates.........................................................................................................................12
+Defensive Structure..........................................................................................................14
+Serving Line Breaks......................................................................................................... 14
+Defensive Lines................................................................................................................ 15
+Determining Whether A Line Is Broken................................................................................. 16
+Phases Of Play..................................................................................................................18
+How It Works.......................................................................................................................... 19
+Special Case: Disruption........................................................................................................20
+On-Ball Engagement Types............................................................................................... 20
+Pressing Vs Pressure.............................................................................................................20
+Recovery Press, Counter Press And Other........................................................................... 21
+Affected Line Breaking Passing Options........................................................................... 22
+Attributes Specific Consideration......................................................................................23
+Speeds.................................................................................................................................... 23
+Pass Range.............................................................................................................................24
+Angles And Directions............................................................................................................24
+Ahead, Same line And Behind................................................................................................25
+Forward Momentum.............................................................................................................. 25
+CSV File............................................................................................................................ 26
+Event Attributes................................................................................................................ 27
+Basics..................................................................................................................................... 27
+Associated Events............................................................................................................... 32
+Page 4
+
+Game Context....................................................................................................................... 34
+Event Start / End.....................................................................................................................39
+Outcome................................................................................................................................44
+Physical.................................................................................................................................47
+Player In Possession Details.............................................................................................. 50
+Player Targeted.....................................................................................................................54
+Teammates And Opponent Context......................................................................................63
+Pass / Passing Options Details...........................................................................................66
+Line Breaks...........................................................................................................................70
+Player Bypassed.................................................................................................................. 75
+Player Possession Specifics...............................................................................................76
+Passing Option Availability................................................................................................. 78
+Off-Ball Run Specifics......................................................................................................... 82
+Player Overtaken..................................................................................................................84
+On-Ball Engagement Specifics.............................................................................................. 85
+Data Matching.......................................................................................................................88
+
+Page 5
+
+Tracking Data
+Dynamic Events are generated using SkillCorner Tracking v3.
+Many Dynamic Event attributes are derived either directly from tracking data or through
+machine learning models using tracking data as input.
+Hence the quality of Dynamic Events depends on the quality of SkillCorner Tracking v3.
+This quality can be affected by several factors, including:
+●​ Video feed quality and associated production limitations (such as close-ups, replays,
+and players moving out of the camera's field of view)
+●​ Camera location and stadium conditions
+●​ SkillCorner ability to accurately detect the player and the ball, as well as read jersey
+numbers
+To reduce the risk of delivering inaccurate information, we only provide Dynamic Events for
+matches that meet the following criteria:
+●​ A quality index above 4 for both the players and the ball
+●​ Successful matching of a sufficient number of Wyscout events with SkillCorner
+Tracking v3.
+For more information on the quality of SkillCorner Tracking v3, please refer to the associated
+validation study.
+
+Event Definitions
+Player Possession
+For an activity to be detected as a Player Possession (PP) the player needs to be in
+control of the ball, i.e. able to do a pass, shot or carry.
+A player possession starts from the first touch of the player up to the last touch.
+A one-touch is a player possession that lasts only one frame.
+If a player is not in control of the ball then it does not qualify as a player possession.
+Typically, if a player intercepts the ball without controlling it afterward, like for blocks, it does
+not count as a player possession.
+
+Off-ball Run
+For an activity to be detected as an (in possession) Off-Ball Run (OBR) it needs to have
+the following characteristics:
+Page 6
+
+●​ lasts at least 0.7 seconds,
+●​ be above 4.2 m/s = 15 km/h,
+●​ the player needs to have been on screen for at least 0.5 second during his run.
+Additionally, the runner needs to be a passing option during or within 8 frames of his
+active run finishing or have received a pass after/during his run.
+We extend the window as a player can make an active run, in anticipation of the ball carrier
+turning towards them to make a pass, but they may only become an option after they have
+stopped their run.
+For more details on what off-ball runs are and which are the different types we detect,
+please refer to this article.
+We detect Off-Ball Runs occurring during a Player Possession i.e. when a player is in control
+of the ball.
+As a consequence, we don’t detect Off-Ball Runs occurring during set pieces or restarts.
+
+Passing Option
+For an activity to be detected as a Passing Option (PO) it needs to have the following
+characteristics:
+●​ The player performing the event should be a highly likely target for a pass by the
+player in possession as predicted by our Receiver Model. It is reflected by the
+constraint that the player passing option score should be above 0.6.
+●​ Lasts at least 0.3 seconds.
+The passing option score is derived from our Receiver Model that predicts at each
+moment whether a player is a likely target for a pass. For further details read this article.
+Certain players while being close to the player in possession may not be identified as
+passing options since on average they are not targeted by the player in possession.
+We also create a Passing Option event whenever a player has been targeted by a pass
+regardless of his passing option score.
+If the player who was targeted by the pass did not have a passing option score above 0.6
+for 0.3 seconds before being targeted, the event we create lasts 0.3 seconds and it ends
+with the frame of the pass from the player in possession.
+We detect Passing Options occurring during a Player Possession i.e. when a player is in
+control of the ball.
+Page 7
+
+As a consequence, we don’t detect Passing Options occurring during set pieces or restarts.
+To detect passing options for one-touch passes (that lasts only one frame), we extend the
+window to determine what are the passing options by two frames before and two frames
+after the first touch.
+
+On-ball Engagement
+For an activity to be detected as an On-Ball Engagement (OBE), it must satisfy two criteria:
+1.​ The event is performed by a player from the team out of possession.
+2.​ The player is interacting with the player in possession in a way that influences their
+action—either by actively pressing/challenging them or by controlling/containing
+their movement.
+
+To determine whether a player is engaging the player in possession, we use a machine
+learning model (GNN LSTM) that predicts, for each frame, if an on-ball engagement (OBE) is
+occurring.
+This model was trained using "expert" annotations, which are sequential in nature and define
+both the start and end of each engagement. The criteria for identifying these points are
+based on player positions, distances, and dynamics.
+Since some on-ball engagements can originate from a significant distance—such as in
+recovery press, where the defender starts far from the player in possession—we introduced a
+secondary attribute called physical_frame_start. This attribute indicates when the player
+began moving at a speed of over 15 km/h and maintained it up to the point of engaging the
+player in possession.
+
+Relationship Between Events
+Every Passing Option and every Off-Ball Run is associated with one and only one Player
+Possession.
+It is the Player Possession when the event occurs.
+A Passing Option or an Off-ball Run can start before and end after the player possession it is
+associated with but it can’t overlap with two player possession.
+Consequently, if a player is a passing option over several consecutive player possessions it
+will be represented by several passing option events (one for each player possession where
+the player is a passing option).
+Every Off-Ball Run is associated with one and only one Passing Option.
+For a player to be recorded as performing an Off-Ball Run, they need to have been a Passing
+Option at one point during his Off-Ball Run.
+
+Page 8
+
+For a given Player Possession, if the player in possession attempted a pass, the Player
+Possession event references the Passing Option that was targeted.
+The Player Possession event aggregates and references numerous data points related to the
+Passing Options and Off-Ball Runs that occurred during the Player Possession.
+Every On-ball Engagement is associated with one and only one Player Possession event
+and it can be associated with one (line breaking) Passing Option.
+
+Merging Consecutive Events
+If during the same player possession, two Passing Options are recorded for the same player
+with less than 0.5 sec between them, then the two events are merged into a single one.
+If during the same player possession, two Off-Ball Runs are recorded for the same player
+with less than 0.5 sec between them, then the two events are merged into a single one.
+
+Page 9
+
+If during the same player possession, two On-Ball Engagement are recorded for the same
+player with less than 0.5 sec between them, then the two events are merged into a single
+one.
+
+Window Extension
+For any events that last less than 5 frames like a one touch pass, we use the 5 frames
+leading to the end of the event to compute speeds and trajectory angles.
+
+Passing Moment Frame Selection
+For each Passing Option and Off-ball Run event, we assign a passing_option_score, xthreat
+value, xpass_completion value and line breaking pass opportunity.
+When a player is served a pass we compute the metrics at the moment of the pass.
+When the player is not served, we compute the metrics at a (theoretical) passing moment.
+The passing moment corresponds to the most likely passing moment the player could have
+been served the ball. It is the frame that, when passing_option_score is above 0.6,
+maximises:
+𝑝𝑎𝑠𝑠𝑖𝑛𝑔_𝑜𝑝𝑡𝑖𝑜𝑛_𝑠𝑐𝑜𝑟𝑒 × 𝑥𝑡ℎ𝑟𝑒𝑎𝑡 × 𝑥𝑝𝑎𝑠𝑠_𝑐𝑜𝑚𝑝𝑙𝑒𝑡𝑖𝑜𝑛
+This calculation maximises the threat potential (𝑥𝑡ℎ𝑟𝑒𝑎𝑡 × 𝑥𝑝𝑎𝑠𝑠_𝑐𝑜𝑚𝑝𝑙𝑒𝑡𝑖𝑜𝑛) and weights
+it via the passing_option_score (likeliness of receiving the ball next).
+We deliver the corresponding frame for Passing Option events under the attribute
+peak_passing_option_frame.
+
+Model Used
+Model used
+
+Role
+
+Associated Metrics
+
+Receiver model (see
+details here)
+
+A standardised score to measure the
+likelihood of a player being the target of a pass
+at a given frame.
+
+passing_option_score;
+passing_option;
+passing_option_start
+
+This model is used to determine whether a
+player is a passing option (to do so he needs
+to have passing_option_score > 0.6).
+xThreat model (see
+details here)
+
+Probability for a goal to happen within 10 sec
+if a given player was to be the target of a
+complete pass at a given frame.
+
+xthreat; dangerous_run;
+player_targeted_dangerous
+
+Page 10
+
+Pass completion model
+(Graph Neural Network)
+
+Probability of completing a pass to a player at
+a given frame.
+
+xpass_completion;
+difficult_target;
+player_targeted_difficult
+
+Run classification
+model (see details here)
+
+Determines the type of off-ball run performed.
+
+event_subtype
+
+On-ball engagement
+detection (GNN-LSTM)
+
+Detect on-ball engagements.
+
+event_type
+
+On-ball engagement
+classification
+(GNN-LSTM)
+
+Determine the type of on-ball engagement.
+
+event_subtype
+
+Expected Possession
+Value (GNN-LSTM)
+
+Determine the chances for a team to score
+within the next 90 seconds or before the ball
+goes out of play.
+
+possession_danger;
+beaten_by_possession;
+beaten_by_movement;
+stop_possession_danger;
+reduce_possession_danger;
+
+Progression model
+(GNN-LSTM)
+
+Considering current player possession
+predicts whether it will end with a loss, a shot,
+a progression, regressive or neutral complete
+pass.
+
+force_backward;
+xloss_player_possession_start;
+xloss_player_possession_end;
+xloss_player_possession_max;
+xshot_player_possession_start;
+xshot_player_possession_end;
+xshot_player_possession_max
+
+Direction Of Play And Pitch Coordinates
+We deliver every player orientation dependent attribute - except attacking_side and
+attacking_side_id - assuming the team in possession is attacking from left to right.
+It means that, for each period, we mirror the coordinates of the team that is actually
+attacking from right to left.
+We consider that the center of the pitch coordinates are (0,0).
+Coordinates are expressed in metres.
+
+Event Matching
+In order to produce Dynamic events, we combine SkillCorner Tracking data with Wyscout
+Events.
+Our ability to synchronise our tracking data with Wyscout events is critical and it also reflects
+our confidence in the accuracy of our dynamic events.
+
+Page 11
+
+We check whether we are able to match:
+●​ the start of a player possessions (this one does not exist in Wyscout, we have trained
+our own model to detect the beginning of a player possession)
+●​ end of player possessions
+●​ pass receptions
+For every event we report whether we were able to match the start of the player possession,
+its end, and if relevant the previous pass and the next pass reception.
+This matching is based on the distance between the player and the ball.
+If we are not able to match any of these, the quality of the data associated with these
+particular moments can be lowered.
+
+Empty Attribute Values
+Several attributes including speed_avg, xy coordinates, or passing_option_score, xthreat,
+xpass_completion can sometimes be empty.
+This is due to either the absence of enough information to deliver the metrics (e.g. when
+there is a very long close shot we don’t provide tracking data after 10 sec) or, due to low
+confidence in the data (in particular for speed_avg).
+Further details can be found in the description of the attributes.
+
+Line Breaking Passes
+For every Passing Option event (whether the player was served or not) we serve information
+about (potential) line breaks, especially which line is broken and how (through or around).
+To identify line breaks we:
+1.​ Determine if there is a defensive structure and the associated lines in place.
+2.​ If there is a defensive structure, we determine whether these lines are (could have
+been) broken.
+
+Defensive Structure
+We use the terminology defensive structure and not formation to reflect that these
+structures can be dynamic and evolve significantly during the same play.
+
+Templates
+We have a set of defensive structures Templates that correspond to the defensive structure
+we can detect.
+Here are the Templates for a team of 11 defending players :
+
+Page 12
+
+Here are the Templates for a team of 10 defending players (in case of a red card).
+
+Page 13
+
+In case of 2 missing players we don’t detect any defensive structure and we don’t deliver line
+breaks.
+
+Defensive Structure
+For each Passing Option, we find which defensive structure Template fits best with the
+defending players positions during the pass if one occurs or at the passing moment if not.
+For the Passing Options that were not served, we detect the defensive structure by looking at
+the defending teams players positions between:
+●​ the passing moment
+●​ and passing moment + 1 second
+
+Serving Line Breaks
+We define a line break situation as one where the defending team is organised and the state
+of play is not a counter attack or chaotic phase.
+We have trained a model which evaluates how structured the defending team is using
+features like the speeds of the players and how well the defending team's structure fits a
+template.
+
+Page 14
+
+As a result we rule out counter attacks, chaotic phases or situations where the defensive
+unit is highly disorganised and defensive lines cannot be clearly defined by using our
+machine learning model.
+As a result we provide a field, organised_defense, which if True we deliver the defensive
+structure we identified and if False we do not provide a value.
+
+Defensive Lines
+If there is no structure then we don’t define lines and we don’t deliver line breaks.
+If there is a structure then we define a line as a block of 2 or more players in the defensive
+structure.
+Defensive Lines Naming Convention
+The last defensive line is the one closest to the goal of the defending team.
+The second last defensive line is the second closest to the defending team's goal.
+If there are at least three lines, the first defensive line is the furthest from the defending
+team's goal.
+A defensive line is not necessarily a straight line but rather a set of segments that links the
+players that are part of the same line.
+
+Page 15
+
+If we have been able to identify a defensive structure and the associated defensive lines, the
+next step is to deliver line breaks.
+
+Determining Whether A Line Is Broken
+For successful passes, we track the ball and player positions for each frame of the pass.
+We determine if the line has been bypassed, either through or around the defenders.
+To determine if a line has been bypassed, we check whether the ball is at the left of the line
+at the frame of the pass, and at the right of the line at the moment of the reception.
+
+Page 16
+
+As seen in the figure above, we do not simply draw a horizontal line; the line follows the
+organization of the players within the unit. Therefore, breaking a line does not necessarily
+mean surpassing the deepest defender. We choose this approach as it better reflects the
+actual football situation. In the example above, the receiver does not break the 'deepest line'
+but bypasses the central defender and receives the ball between the two wider center-backs.
+Given the space the attacker now has in front of them, it makes sense to say the line has
+been broken.
+Then, we use a Machine Learning model to filter non relevant line breaks (for example
+passes that bypassed the line around with a very high angle, passes that bypassed the line
+through 2 defenders that are 30 metres away from each other, passes where the pass
+distance is very low, …). This model is based on geometrical features about the pass (pass
+distance, pass angle, distance passer-line, distance receiver-line, …).
+For unsuccessful passes, we track the ball and player positions for each frame until the ball
+is intercepted or goes out of play. Then depending on whether the ball was intercepted
+closely, we can rely on the actual trajectory of the ball or infer it to detect line breaks.
+Then as for complete pass, we use the Machine Learning model to filter non relevant line
+breaks.
+For Passing Options that were not targeted by a pass, we only know the passing moment
+using the passing moment equation. We infer the trajectory of the pass the player in
+Page 17
+
+possession would have played to the passing option and determine what potential line break
+would have occurred. Once again, we then filter out non relevant line breaks using the same
+Machine Learning model as for previous situations.
+The methodology used to infer ball trajectory is based on the player 's speed and trajectory.
+We validated this methodology on actual successful passes. To do so we predicted whether
+a line break would have occurred on a set of actual successful passes and we reached an
+accuracy of 95%.
+We have been asked several times whether we could predict if a pass would be played over a
+line. As of now we are not confident with predicting it accurately.
+For every successful pass we deliver the high_pass flag that indicates whether the ball
+reached at least 1.8m during the pass. As a result, for every successful pass, one is able to
+further determine if a line breaking pass went around through and/or over the line(s).
+For unsuccessful pass attempts, we indicate when the ball went above 1.8m (high_pass =
+True) but we cannot say it would not have. It means that the value of high_pass can only be
+True or None in this case.
+
+Phases Of Play
+For each dynamic event, we specify the corresponding phase of play:
+●​ Phases of play capture which phase the attacking and defending team are in
+concurrently.
+●​ Phases of play are only defined when the ball is in play. When the ball is out of play
+there is no phase of play.
+●​ Each in-possession phase directly corresponds to an out-of-possession phase.
+In Possession
+Phase
+
+Out of Possession
+Phase
+
+Description ​
+(from the team in possession point of view)
+
+Build up
+
+High Block
+
+The ball is in the team’s own third; the ball carrier is under pressure
+or the opposing players are positioned and stay very high.
+
+Create
+
+Medium Block
+
+This is the default phase, typically occurring near the middle third of
+the pitch. However, it can also take place:
+●​ In the team in possession defensive third, if the ball carrier is
+not under pressure, or
+●​ In the team in possession attacking third, if the defending
+team’s last defensive line is positioned away from its penalty
+area.
+
+Finish
+
+Low Block
+
+The ball is in the final (attacking or defending depending on point of
+view) or middle third; the defensive line is close to the penalty area,
+with established possession for at least 1 second.
+Page 18
+
+Direct
+
+Defending Direct
+
+Begins with a long ball pass (32+ meters along the x axis, without
+being a switch of play) from own half targeting a player near
+reception, lasting until reception.
+
+Quick Break
+
+Defending Quick
+Break
+
+Starts with regaining possession in the opponent’s half, followed by
+rapid progression up the pitch.
+
+Transition
+
+Defending
+Transition
+
+Set Play
+
+Defending Set Play
+
+Begins with regaining possession in own half, followed by rapid
+progression up the pitch.
+This phase includes corners, free-kicks, and long throw-ins directed
+into the penalty area. The phase ends when:
+●​ The opposition establishes clear possession,
+●​ The ball is cleared back to the defending team’s half,
+●​ The ball goes out of play, or
+●​ 20 seconds have passed since the set piece was taken.
+Important point: It excludes quick free-kicks in the team’s own half
+or any free-kick without a cross attempt within 10 seconds, unless in
+a wide channel. These free-kicks are considered as the start of Build
+Up, Create or Finish.
+
+Chaotic
+
+Chaotic
+
+A chaotic phase is marked by a short contested possession. For a
+phase to avoid being labelled chaotic, it must meet one of these
+criteria:
+●​ Include at least three passes with no more than one header,
+or
+●​ Involve at least 5 seconds of possession.
+Clearances under pressure are always considered chaotic.
+
+How It Works
+To establish which team has possession at any given moment, we apply specific rules based
+on player possession dynamic events:
+1.​ When a player has possession, their team is considered to be in possession.
+2.​ If two consecutive player possessions are recorded for the same team (Team A),
+then Team A retains possession between those possessions.
+3.​ If possession transitions between two teams (Team A and Team B), possession
+shifts to Team B at the start of their player possession event.
+4.​ If no events (player possession, set piece or goal) occur for more than 30 seconds,
+we consider the ball to be out of bounds.
+Once team possession is established, we break it down into sequences to which we attach
+one for the aforementioned phases of play. This process primarily relies on:
+Page 19
+
+●​ Player possession dynamic events,
+●​ Ball tracking data (the position on the pitch, particularly the third where the ball is
+located),
+●​ Player tracking data, e.g. to determine if the ball carrier is under pressure, which
+qualifies the phase as a build-up phase, or to determine the last defensive line height,
+and
+●​ Set pieces and goal data.
+The phase of play attributed to a player_possession event corresponds to the phase of play
+at the end of that player_possession.
+The phase of play associated with an off-ball run or a passing option corresponds to the
+phase of play associated with the associated player possession (as a reminder each off-ball
+run and each passing option is associated with one and only one player possession).
+
+Special Case: Disruption
+Phases of play can be temporarily disrupted, for instance, when a defender blocks a shot
+and unsuccessfully attempts to clear the ball, allowing the attacking team to regain
+possession and resume their finish phase.
+We don’t want to cut phases of play due to these short interruptions.
+In this scenario, the defending player’s possession is labelled as 'Disruption.' However, the
+overall phase index remains assigned to the 'Finish' phase for example.
+
+On-Ball Engagement Types
+We have 5 types of on-ball engagements:
+●​
+●​
+●​
+●​
+●​
+
+pressing,
+pressure,
+recovery press,
+counter press
+and others.
+
+Pressing Vs Pressure
+A key feature for describing if a player is actively pressing vs applying pressure is the wider
+team context. For instance
+●​ if a player applies pressure by themselves this is an individual act separate from the
+team, we would therefore class this as applying pressure.
+●​ If a defender applies pressure within a chain, for example defender 1 presses
+attacker 1 who passes to attacker 2 who is then pressed by another defender this is
+now a collective action (pressing chain) and becomes pressing.
+Page 20
+
+Pressure
+A defender applies direct pressure (moves forward or sideways towards the player in
+possession). We classify pressure as a singular action outside of a pressing chain (see
+below).
+Pressing
+Is the same as pressure except within a pressing chain (see below). Given the player is
+acting as part of a collective this changes the context of the engagement. Since we only
+define pressing within a chain, any actions that occur during a transition, finish or set play
+phase remain as a pressure.
+Pressing Chain
+A pressing chain consists of two player possessions which receive either a pressing,
+counter press or recovery press. ​
+The possessions must be within 4 seconds of each other (they do not need to be
+consecutive).
+Pressing chains can only occur when the attacking team is within a Build Up, Direct or
+Create Phase as defined within our Phases of Play model.​
+These phases correspond approximately to the final and middle third of the pitch.
+Pressures within Finish, Transition, Chaotic and Set Play phases are not considered for
+pressing phases as they represent a different tactical approach for the defending team.
+In addition, pressing chains can be broken when the attacking team performs a fast break
+within their possession. ​
+We define this as when an attacker carries the ball forward >= 15m’s and has less than 8
+defenders ahead of them by the end of the carry. We apply this break as it captures when
+the defending team is having to recover in an emergency situation rather than having a
+controlled collective press.
+
+Recovery Press, Counter Press And Other
+Recovery Press
+A defender runs backwards to attempt to apply pressure to the ball carrier.
+Counter Press
+After a team loses possession in open play, a defender must apply pressure to the team in
+possession within 3 seconds of the ball being turned over.
+This can be any type of defensive engagement (pressure, recovery press, others). We take
+the approach to include all engagement types due to the chaotic nature of counter pressing.
+Defenders may be in close proximity already in a contested duel situation or they may hold
+their position as the attacker dribbles towards them as they haven’t had the time to actively
+press.
+Other
+Page 21
+
+A defender is not directly applying pressure to the attacker in possession. There are several
+situations this includes:
+●​ An attacker dribbles towards the defender and the defender stays in the position they
+are in. In this situation the attacker is engaging the defender therefore we do not
+classify this as the defender actively applying pressure.
+●​ A defender is jockeying the attacker, moving backwards or to the side as the attacker
+carries the ball. The defender is also goalside of the attacker.
+●​ A Contested Duel. We attempt to separate situations where a defender is already
+close to an attacker when the ball is turned over. We do not consider these situations
+as pressure actions since the defender may have just lost the ball to the player in
+possession and is applying pressure simply by being close, or if a player was
+targeted with a pass which was Intercepted and the defender is not actively applying
+pressure, they are just close to the new player in possession.
+Average number of each type of engagements capture per match and per category
+Categories
+
+Premier League 2023/2024
+
+Championship 2023/2024
+
+Pressing
+
+212
+
+203
+
+Pressure
+
+242
+
+222
+
+Counter Press
+
+78
+
+74
+
+Recovery
+Press
+
+188
+
+173
+
+Other
+
+184
+
+174
+
+Total
+
+904
+
+846
+
+Affected Line Breaking Passing Options
+A defender engages the player in possession when they have a realistic line-breaking
+passing option. Passing options that are too difficult or too far are excluded.
+Based on Video Analysis we consider that due to defensive pressure, the player in
+possession often chooses a safer pass instead of exploiting the line-breaking option.
+For an event to be assessed:
+●​ The player in possession must attempt a pass.
+●​ If the player is disrupted before passing, the event is analyzed as a defensive regain
+or disruption instead.
+
+Page 22
+
+A valid line-breaking pass option must be within 35m, inside the defensive structure, and
+have a high probability of completion (xP > 0.68).
+A defender is considered influential if they are goalside, close to the player in possession,
+and actively engaging them before the passing option ends. Tighter proximity rules apply
+for Recovery Press situations.
+
+Attributes Specific Consideration
+Speeds
+Every event has a speed average attribute.
+To compute this speed average
+●​ We need at least 5 frames where the player is detected.
+●​ We apply data filtering to limit the risk of delivering inaccurate speed averages.
+Consequently for some events the speed_avg attribute has no value.
+It corresponds to cases where:
+●​ We filtered out the speed_avg value.
+●​ The player is not detected (especially when they are off-camera) during the whole
+event. This is often the case for passing options.
+Here are some stats for a match:
+Event Type
+
+Number of events
+
+% of Events with speed_avg values
+
+Player Possession
+
+1062
+
+91.6%
+
+Passing Options
+
+2574
+
+71.2%
+
+Off Ball Run
+
+486
+
+97.9%
+
+The average speed is not equal to the distance_covered divided by the event duration for
+several reasons
+●​ This calculation would not work for one touch passes
+●​ distance_covered takes into account the distance covered when the player is
+detected but also when he is extrapolated while speed is only computed based on
+the frame where the player is detected
+●​ We apply filters to limit potential errors.
+Lastly, we bucket speed_avg into speed bands.
+
+Page 23
+
+Name of the Band
+
+Speed
+
+None
+
+If no speed average is available
+
+jogging
+
+speed_avg below 15 km/h
+
+running
+
+speed_avg between 15 km/h and 20km/h
+
+hsr
+
+speed_avg between 20 km/h and 25km/h
+
+sprinting
+
+speed_avg above 25 km/h
+
+Pass Range
+We bucket pass distance into ranges as follow:
+Ranges
+
+Conditions
+
+Short
+
+less than 15m
+
+Medium
+
+between 15m and 30 m
+
+Long
+
+above 30m
+
+By extension we also attribute a range to the distance between two players.
+
+Angles And Directions
+Most angles are expressed relative to the direction of attack.
+We use degrees to measure angles.
+Direction is always defined relative to the direction of attack, using a circle that spans from
+-180° to 180° (rotating anticlockwise). Here are the definitions for various directions:
+●​ Forward: Corresponds to an angle between -45° and +45°
+●​ Backward: Corresponds to an angle below -135° or above 135°
+●​ Sideway Left: Corresponds to an angle between 45° and 135°
+●​ Sideway Right: Corresponds to an angle between -135° and -45°
+
+Page 24
+
+Ahead, Same line And Behind
+For some attributes like location_to_player_in_possession_start - which indicates the
+location of the player performing the event at its start compared to the player in possession
+- we have 3 possible values:
+●​ Ahead: when the player is at least 3 metres ahead of the player in possession along
+the x axis.
+●​ Same Line: when the player is between 3 m behind and 3 metres ahead of the player
+in possession along the x axis.
+●​ Behind: when the player is at least 3 metres behind the player in possession along
+the x axis.
+
+Forward Momentum
+With Forward Momentum the emphasis is on capturing players that perform an action
+centred around their first touch that results in a progressive outcome.
+To do so we identify when a player is capable of initiating (sometimes continuing) a
+progressive move/action from his first touch (or the start of his possession), knowing that
+he received a pass from the back or from the side and that an opponent is at less than 6
+metres from him at the moment of the first touch.
+
+Page 25
+
+For instance it captures situations where the player is able to turn forward and move forward
+quickly.
+We only capture forward momentum for player possessions that start within the central
+channel and the half space.
+
+CSV File
+The csv files consist of the list of all the Player Possession, Passing Option and Off-ball Runs
+detected during a match.
+Each row corresponds to an event performed by a player from the team in possession.
+
+Page 26
+
+Event Attributes
+The goal here is to deliver an exhaustive list of the attributes grouped under key themes.​
+The order of the attributes does not necessarily reflect the order in which the columns are in the csv files.
+
+Basics
+These attributes define fundamental event details: when and where it occurs, who performs it (active player), who is in possession, the event
+type, and its subtype. These attributes provide the foundation for further analysis.
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO
+
+PP
+
+OBE
+
+event_id
+
+str
+
+ID of the event. It is match specific.
+
+e.g.
+
+✓
+
+✓
+
+✓
+
+✓
+
+index
+
+int
+
+Sequence notation for the ordering of events within each match.
+If two events happen at the same time, we order them using
+e.g. 1
+their id.
+
+✓
+
+✓
+
+✓
+
+✓
+
+match_id
+
+int
+
+The ID of the match the event is associated with.
+
+e.g. 32839
+
+✓
+
+✓
+
+✓
+
+✓
+
+frame_start
+
+int
+
+Frame associated with the start of the event in SkillCorner
+extrapolated tracking data.
+
+e.g. 304
+
+✓
+
+✓
+
+✓
+
+✓
+
+frame_end
+
+int
+
+Frame associated to the end of the event in SkillCorner
+extrapolated tracking data.
+
+e.g. 350
+
+✓
+
+✓
+
+✓
+
+✓
+
+frame_physical_start
+
+int
+
+On-Ball Engagements
+Frame where the player initiates his physical activities (going
+above 15 km/h). It is necessarily prior to the start_frame.
+
+e.g. 3233
+
+✓
+
+If the player does not reach 15 km/h prior to frame_start and
+maintains it up to frame_start, it is equal to frame_start
+time_start
+
+timest Time the event starts, recorded to the millisecond. The second
+
+e.g. 00:00:06.293
+
+✓
+
+✓
+
+✓
+
+Page 27
+
+✓
+
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO
+
+PP
+
+OBE
+
+e.g. 00:00:10.331
+
+✓
+
+✓
+
+✓
+
+✓
+
+amp period starts at 00:45:00.
+time_end
+
+timest Time in the period the event ends, recorded to the millisecond.
+amp The second period starts at 00:45:00.
+
+minute_start
+
+int
+
+The minutes on the clock at the time of this event. Resets to 45
+at half- time, 90 at the start of extra time etc.
+
+e.g. 25
+
+✓
+
+✓
+
+✓
+
+✓
+
+second_start
+
+int
+
+The seconds part of the timestamp.
+
+e.g. 10
+
+✓
+
+✓
+
+✓
+
+✓
+
+duration
+
+float Number of seconds the event lasts.
+
+e.g. 4.1
+
+✓
+
+✓
+
+✓
+
+✓
+
+period
+
+int
+
+✓
+
+✓
+
+✓
+
+✓
+
+attacking_side_id
+
+int
+
+1 (left_to_right) / 2 (right_to_left)
+
+✓
+
+✓
+
+✓
+
+✓
+
+attacking_side
+
+str
+
+Attacking side of the team of the player.
+
+left_to_right / right_to_left
+
+✓
+
+✓
+
+✓
+
+✓
+
+int corresponding to the event type
+
+1 (off_ball_run) / 7 (passing_option) /
+8 (player_possession) / 9
+(on_ball_engagement)
+
+✓
+
+✓
+
+✓
+
+✓
+
+The type of event.
+
+player_possession / off_ball_run /
+passing_option /
+defensive_engagement
+
+✓
+
+✓
+
+✓
+
+✓
+
+1 (behind) / 2 (coming_short) / 3
+(cross_receiver) / 4 (dropping_off) / 5
+(overlap) / 6 (pulling_half_space) / 7
+(pulling_wide) / 8
+(run_ahead_of_the_ball) / 9 (support)
+/ 10 (underlap) / 11 (pressing) / 12
+(pressure) / 13 (counter_press) / 14
+(recovery_press) / 15 (other)
+
+✓
+
+event_type_id
+
+event_type
+
+event_subtype_id
+
+int
+
+str
+
+int
+
+1: first half / 2: second half / 3: first
+An identified identifier for the period of the match when the event
+extratime / 4: second extratime / 5:
+happens.
+penalty shootout
+
+✓
+
+Page 28
+
+Attribute
+
+Type Description
+
+Subtype of the event.
+event_subtype
+
+str
+None for Player Possessions and Passing Options.
+
+Values
+
+OBR
+
+behind / coming_short /
+cross_receiver / dropping_off / overlap
+/ pulling_half_space / pulling_wide /
+run_ahead_of_the_ball / support /
+underlap / pressing / pressure /
+counter_press / recovery_press /
+other / None
+
+✓
+
+PO
+
+PP
+
+OBE
+
+✓
+
+player_id
+
+int
+
+ID of the player performing the event.
+
+e.g. 11746
+
+✓
+
+✓
+
+✓
+
+✓
+
+player_name
+
+str
+
+Name of the player performing the event.
+
+e.g. "T. Alexander-Arnold"
+
+✓
+
+✓
+
+✓
+
+✓
+
+1(GK),2(LB),3(LWB),4(LCB),5(CB),6(
+RCB),7(RWB),8(RB),9(LDM),10(DM),
+11(RDM),12(LM),13(CM),14(RM),15(
+AM),16(LW),17(RW),18(LF),19(CF),20
+(RF)
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+player_position_id
+
+int
+
+player_position
+
+str
+
+Position of the player.
+
+GK,LB,LWB,LCB,CB,RCB,RWB,RB,L
+DM,DM,RDM,LM,CM,RM,AM,LW,RW,
+LF,CF,RF
+
+✓
+
+✓
+
+player_in_possession_id
+
+int
+
+ID of the player in possession.
+
+e.g. 11746
+
+✓
+
+✓
+
+✓
+
+player_in_possession_name
+
+str
+
+Name of the player in possession.
+
+e.g. "T. Alexander-Arnold"
+
+✓
+
+✓
+
+✓
+
+1(GK),2(LB),3(LWB),4(LCB),5(CB),6(
+RCB),7(RWB),8(RB),9(LDM),10(DM),
+11(RDM),12(LM),13(CM),14(RM),15(
+AM),16(LW),17(RW),18(LF),19(CF),20
+(RF)
+
+✓
+
+✓
+
+✓
+
+✓
+
+player_in_possession_position_id
+
+int
+
+player_in_possession_position
+
+str
+
+Position of the player.
+
+GK,LB,LWB,LCB,CB,RCB,RWB,RB,L
+DM,DM,RDM,LM,CM,RM,AM,LW,RW,
+LF,CF,RF
+
+✓
+
+✓
+
+team_id
+
+int
+
+ID of the team of the player performing the event.
+
+e.g. 2
+
+✓
+
+✓
+
+✓
+
+Page 29
+
+✓
+
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO
+
+PP
+
+OBE
+
+team_shortname
+
+str
+
+Shortname of the team of the player performing the event.
+
+e.g. Fiorentina
+
+✓
+
+✓
+
+✓
+
+✓
+
+x_start
+
+float
+
+x coordinate of the player concerned by the event at the start of
+the event.
+
+e.g. -5,2
+
+✓
+
+✓
+
+✓
+
+✓
+
+y_start
+
+float
+
+y coordinate of the player concerned by the event at the start of
+the event.
+
+e.g. 10,8
+
+✓
+
+✓
+
+✓
+
+✓
+
+channel_id_start
+
+int
+
+1 (wide_left) / 2 (half_space_left) / 3
+(center) / 4 (half_space_right) / 5
+(wide_right)
+
+✓
+
+✓
+
+✓
+
+✓
+
+channel_start
+
+str
+
+wide_left / half_space_left / center /
+half_space_right / wide_right
+
+✓
+
+✓
+
+✓
+
+✓
+
+third_id_start
+
+int
+
+1 (defensive_third) / 2 (middle_third) /
+3 (attacking_third)
+
+✓
+
+✓
+
+✓
+
+✓
+
+third_start
+
+str
+
+Third where the event starts.
+
+defensive_third / middle_third /
+attacking_third
+
+✓
+
+✓
+
+✓
+
+✓
+
+penalty_area_start
+
+bool
+
+TRUE if the event start location is in the penalty area.
+Else FALSE.
+
+TRUE / FALSE
+
+✓
+
+✓
+
+✓
+
+✓
+
+x_end
+
+float
+
+x coordinate of the player concerned by the event at the end of
+the event.
+
+e.g. -5,2
+
+✓
+
+✓
+
+✓
+
+✓
+
+y_end
+
+float
+
+y coordinate of the player concerned by the event at the end of
+the event.
+
+e.g. 10,8
+
+✓
+
+✓
+
+✓
+
+✓
+
+channel_id_end
+
+int
+
+1 (wide_left) / 2 (half_space_left) / 3
+(center) / 4 (half_space_right) / 5
+(wide_right)
+
+✓
+
+✓
+
+✓
+
+✓
+
+channel_end
+
+str
+
+wide_left / half_space_left / center /
+half_space_right / wide_right
+
+✓
+
+✓
+
+✓
+
+✓
+
+Channel where the event starts.
+
+Channel where the event ends.
+
+Page 30
+
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO
+
+PP
+
+OBE
+
+third_id_end
+
+int
+
+1 (defensive_third) / 2 (middle_third) /
+3 (attacking_third)
+
+✓
+
+✓
+
+✓
+
+✓
+
+third_end
+
+str
+
+Third where the event ends.
+
+defensive_third / middle_third /
+attacking_third
+
+✓
+
+✓
+
+✓
+
+✓
+
+penalty_area_end
+
+bool
+
+TRUE if the event end location is in the penalty area.
+Else FALSE.
+
+TRUE / FALSE
+
+✓
+
+✓
+
+✓
+
+✓
+
+Page 31
+
+Associated Events
+These attributes link the current event to related events, helping to understand event relationships—especially for those analyzing event
+sequences and interactions.
+Attribute
+
+Type
+
+Description
+
+Values
+
+OBR PO PP
+
+OBE
+
+associated_player_possession_event_id
+
+str
+
+ID of the associated player possession event.
+
+e.g.
+
+✓
+
+✓
+
+✓
+
+associated_player_possession_frame_start
+
+int
+
+Frame when the associated possession of
+player_in_possession starts.
+
+e.g. 34
+
+✓
+
+✓
+
+✓
+
+associated_player_possession_frame_end
+
+int
+
+Frame when the associated player possession
+ends.
+
+associated_player_possession_end_type_id
+
+int
+
+associated_player_possession_end_type
+
+str
+
+How the associated possession ended.
+
+str
+
+If the player performing the passing options is
+also performing an off-ball run, ID of the off-ball
+run event.
+e.g. 1_30
+
+associated_off_ball_run_event_id
+
+✓
+1 (pass) / 2 (shot) / 3 (clearance) / 4
+(foul_suffered) / 5 (possession_loss) / 6
+(unknown)
+
+✓
+
+pass / shot / clearance / foul_suffered /
+possession_loss / unknown
+
+✓
+
+✓
+
+Else None.
+
+associated_off_ball_run_subtype_id
+
+int
+
+If the player performing the passing options is 1 (behind) / 2 (coming_short) / 3
+also performing an off-ball run, ID of the type of (cross_receiver) / 4 (dropping_off) / 5
+the off-ball run event.
+(overlap) / 6 (pulling_half_space) / 7
+(pulling_wide) / 8 (run_ahead_of_the_ball) / 9
+Else None.
+(support) / 10 (underlap)
+
+✓
+
+Page 32
+
+Attribute
+
+associated_off_ball_run_subtype
+
+Type
+
+Description
+
+str
+
+If the player performing the passing options is
+also performing an off-ball run, type of the
+off-ball run event.
+Else None.
+
+Values
+behind / coming_short / cross_receiver /
+dropping_off / overlap / pulling_half_space /
+pulling_wide / run_ahead_of_the_ball /
+support / underlap
+
+OBR PO PP
+
+✓
+
+Page 33
+
+OBE
+
+Game Context
+These attributes capture the overall match state, including the scoreline and phase of play.
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+game_state_id
+
+int
+
+1 (Winning) / 2 (Losing) / 3 (Drawing)
+
+✓
+
+✓ ✓
+
+✓
+
+game_state
+
+str
+
+Whether the player team is winning, losing or
+drawing at the start of the event.
+
+Winning / Losing / Drawing
+
+✓
+
+✓ ✓
+
+✓
+
+team_score
+
+int
+
+Player own team score at the start of the player
+possession
+
+e.g. 0
+
+✓
+
+✓ ✓
+
+✓
+
+opponent_team_score
+
+int
+
+Player opponent team score at the start of the player e.g. 1
+possession
+
+✓
+
+✓ ✓
+
+✓
+
+phase_index
+
+int
+
+Index of the Phase of Play ordered chronologically.
+
+✓
+
+✓ ✓
+
+✓
+
+int
+
+The index of the player possession within the current e.g. 3
+phase_id (based on
+team_in_possession_phase_type_end).
+This is between 1 (first possessions) to the
+n_player_possessions_in_phase.
+
+player_possession_phase_index
+
+e.g. 621
+
+bool TRUE if the player possession is the first one of the
+team possession.
+Else FALSE.
+
+TRUE / FALSE
+
+first_player_possession_in_team_possession
+
+bool TRUE if the player possession is the last one of the
+team possession.
+Else FALSE.
+
+TRUE / FALSE
+
+last_player_possession_in_team_possession
+
+✓
+
+✓
+
+✓
+
+Page 34
+
+Attribute
+
+Type Description
+
+Values
+TRUE / FALSE
+
+lead_to_different_phase
+
+bool TRUE if
+- the player possession ends the team possession
+- or if the player possession phase is different from
+the next player possession phase.
+Else FALSE.
+
+TRUE / FALSE
+
+issued_from_different_phase
+
+bool TRUE if
+- the player possession starts his team possession
+- or if the player possession phase is different from
+the previous player possession phase.
+Else FALSE.
+
+n_player_possessions_in_phase
+
+team_possession_loss_in_phase
+
+int
+
+OBR PO PP OBE
+
+✓
+
+✓
+
+Number of player possession associated to the same e.g. 3
+phase as the current player possession.
+
+bool TRUE if team possession ends during the current
+phase.
+Else FALSE.
+
+✓
+
+TRUE / FALSE
+✓
+
+✓
+
+Note that temporary disruptions are not considered
+as ending the team possession.
+int
+team_in_possession_phase_type_id
+str
+team_in_possession_phase_type
+int
+team_out_of_possession_phase_type_id
+
+Phase of play for the team in possession.
+
+0 (build_up) / 1 (create) / 2 (finish) / 3
+(quick_break) / 4 (transition) / 5 (chaotic) /
+6 (direct) / 7 (set_play) / 14 (disruption)
+
+✓
+
+✓ ✓
+
+✓
+
+build_up / create / finish / quick_break /
+transition / chaotic / direct / set_play /
+disruption
+
+✓
+
+✓ ✓
+
+✓
+
+5 (chaotic) / 8 (low_block) / 9
+(medium_block) / 10 (high_block) / 11
+(defending_transition) / 12
+(defending_quick_break) / 13
+(defending_set_play) / 14 (disruption) / 15
+
+✓
+
+✓ ✓
+
+✓
+
+Page 35
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+(defending_direct)
+str
+
+Phase of play for the team out of possession.
+
+team_out_of_possession_phase_type
+
+int
+
+int
+
+current_team_out_of_possession_next_phase_type_id
+
+Next phase of the team that is currently in
+possession.
+Note that this phase can be an in possession or an
+out of possession phase depending on whether the
+team loses possession during the current phase.
+Refer to team_possession_loss_in_phase to know
+whether the team loses possession during the
+current phase.
+
+current_team_in_possession_next_phase_type
+
+✓
+
+0 (build_up) / 1 (create) / 2 (finish) / 3
+(quick_break) / 4 (transition) / 5 (chaotic) /
+6 (direct) / 7 (set_play) / 8 (low_block) / 9
+(medium_block) / 10 (high_block) / 11
+(defending_transition) / 12
+(defending_quick_break) / 13
+(defending_set_play) / 14 (disruption) / 15
+(defending_direct)
+
+current_team_in_possession_next_phase_type_id
+
+str
+
+chaotic / low_block / medium_block /
+high_block / defending_transition /
+defending_quick_break /
+defending_set_play / disruption
+
+build_up / create / finish / quick_break /
+transition / chaotic / direct / set_play /
+low_block / medium_block / high_block /
+defending_transition /
+defending_quick_break /
+defending_set_play / defending_direct
+
+✓ ✓
+
+✓
+
+✓
+
+0 (build_up) / 1 (create) / 2 (finish) / 3
+(quick_break) / 4 (transition) / 5 (chaotic) /
+6 (direct) / 7 (set_play) / 8 (low_block) / 9
+(medium_block) / 10 (high_block) / 11
+(defending_transition) / 12
+(defending_quick_break) / 13
+(defending_set_play) / 14 (disruption) / 15
+(defending_direct)
+
+Page 36
+
+✓
+
+✓
+
+Attribute
+
+Type Description
+
+Values
+
+str
+
+build_up / create / finish / quick_break /
+transition / chaotic / direct / set_play /
+low_block / medium_block / high_block /
+defending_transition /
+defending_quick_break /
+defending_set_play / disruption /
+defending_direct
+
+Next phase of the team that is currently out of
+possession.
+Note that this phase can be an in possession or an
+out of possession phase depending on whether the
+team regains possession during the current phase.
+Refer to team_possession_loss_in_phase to know
+whether the team in possession loses possession
+during the current phase.
+
+current_team_out_of_possession_next_phase_type
+
+int
+
+current_team_in_possession_previous_phase_type_id
+
+str
+
+current_team_in_possession_previous_phase_type
+
+Note that this phase can be an in possession or an
+out of possession phase depending on whether the
+team in possession was the same during the
+previous phase.
+int
+
+current_team_out_of_possession_previous_phase_type_id
+
+Previous phase of the team that is currently in
+possession.
+
+OBR PO PP OBE
+
+✓
+
+0 (build_up) / 1 (create) / 2 (finish) / 3
+(quick_break) / 4 (transition) / 5 (chaotic) /
+6 (direct) / 7 (set_play) / 8 (low_block) / 9
+(medium_block) / 10 (high_block) / 11
+(defending_transition) / 12
+(defending_quick_break) / 13
+(defending_set_play) / 14 (disruption) / 15
+(defending_direct)
+
+✓
+
+build_up / create / finish / quick_break /
+transition / chaotic / direct / set_play /
+low_block / medium_block / high_block /
+defending_transition /
+defending_quick_break /
+defending_set_play / disruption /
+defending_direct
+
+✓
+
+0 (build_up) / 1 (create) / 2 (finish) / 3
+(quick_break) / 4 (transition) / 5 (chaotic) /
+6 (direct) / 7 (set_play) / 8 (low_block) / 9
+(medium_block) / 10 (high_block) / 11
+(defending_transition) / 12
+(defending_quick_break) / 13
+(defending_set_play) / 14 (disruption) / 15
+
+✓
+
+Page 37
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+(defending_direct)
+str
+
+current_team_out_of_possession_previous_phase_type
+
+Previous phase of the team that is currently out of
+possession.
+Note that this phase can be an in possession or an
+out of possession phase depending on whether the
+team in possession was the same during the
+previous phase.
+
+build_up / create / finish / quick_break /
+transition / chaotic / direct / set_play /
+low_block / medium_block / high_block /
+defending_transition /
+defending_quick_break /
+defending_set_play / disruption /
+defending_direct
+
+✓
+
+Page 38
+
+Event Start / End
+These attributes define how an event begins and concludes, such as whether a player’s possession ends with a pass or a shot.
+Attribute
+
+game_interruption_before_id
+
+Type Description
+
+Values
+
+int
+
+None if the player possession was preceded by another player
+possession.
+game_interruption_before
+
+game_interruption_after_id
+
+str
+
+Else game interruption that preceded the player possession.
+
+int
+
+None if the player possession was followed by another player
+possession.
+game_interruption_after
+
+str
+
+Else game interruption that followed the player possession.
+
+OBR PO PP
+
+OBE
+
+1 (corner_for) / 2 (corner_against) / 3
+(free_kick_for) / 4 (free_kick_against) / 5
+(goal_for) / 6 (goal_against) / 7
+(goal_kick_for) / 8 (goal_kick_against) / 9
+(penalty_for) / 10 (penalty_against) / 11
+(throw_in_for) / 12 (throw_in_against)
+
+✓
+
+✓
+
+corner_for / corner_against /
+free_kick_for / free_kick_against /
+goal_for / goal_against / goal_kick_for /
+goal_kick_against / penalty_for /
+penalty_against / throw_in_for /
+throw_in_against / None
+
+✓
+
+✓
+
+1 (corner_for) / 2 (corner_against) / 3
+(free_kick_for) / 4 (free_kick_against) / 5
+(goal_for) / 6 (goal_against) / 7
+(goal_kick_for) / 8 (goal_kick_against) / 9
+(penalty_for) / 10 (penalty_against) / 11
+(throw_in_for) / 12 (throw_in_against)
+
+✓
+
+✓
+
+corner_for / corner_against /
+free_kick_for / free_kick_against /
+goal_for / goal_against / goal_kick_for /
+goal_kick_against / penalty_for /
+penalty_against / throw_in_for /
+throw_in_against / None
+
+✓
+
+✓
+
+Page 39
+
+Attribute
+
+start_type_id
+
+Type Description
+
+Values
+
+int
+
+1 (pass_reception) / 2
+(pass_interception) / 3
+(keep_possession) / 4 (recovery) / 5
+(free_kick_reception) / 6
+(free_kick_interception) / 7
+(throw_in_reception) / 8
+(throw_in_interception) / 9
+(goal_kick_reception) / 10
+(goal_kick_interception) / 11
+(corner_reception) / 12
+(corner_interception) / 13 (unknown)
+
+OBR PO PP
+
+OBE
+
+✓
+
+How the player got in possession of the ball.
+
+start_type
+
+end_type_id
+
+str
+
+pass_reception / pass_interception /
+keep_possession / recovery /
+Keep possession corresponds to when the player possession does not free_kick_reception /
+start with a pass reception but the team in possession is still the same. free_kick_interception /
+throw_in_reception /
+For instance
+throw_in_interception /
+- if a player attempts a pass that is intercepted by an opponent and the goal_kick_reception /
+ball bounces back to the player's own team.
+goal_kick_interception /
+- if a player shoots to the goal and the ball is saved or hits the post to
+corner_reception / corner_interception /
+be recovered but one player from the same team as the player who
+unknown
+shot the ball.
+
+✓
+
+int
+
+1 (pass) / 2 (shot) / 3 (clearance) / 4
+(foul_suffered) / 5 (possession_loss) / 6
+(unknown) / 7 (direct_regain) / 8
+(indirect_regain) / 9 (direct_disruption) /
+10 (indirect_disruption) / 11
+(foul_committed)
+
+✓
+
+Page 40
+
+✓
+
+Attribute
+
+Type Description
+How the possession ended.
+
+end_type
+
+str
+
+Related to the pass reception that started the player possession.
+
+pass_angle_received
+
+float
+
+Values
+
+OBR PO PP
+
+OBE
+
+✓
+
+✓
+
+pass / shot / clearance / foul_suffered /
+possession_loss / unknown /
+direct_regain / indirect_regain /
+direct_disruption / indirect_disruption /
+foul_committed / None
+e.g. 30
+
+None if the event does not start with a pass reception (start_type =
+pass_reception) or if the we cannot evaluate the pass trajectory.
+
+✓
+
+Angle of the ball trajectory before reception compared to the direction
+of attack.
+
+pass_direction_received_id
+
+1 (forward) / 2 (backward) / 3 (sideway
+left) / 4 (sideway right)
+
+int
+Related to the pass reception that started the player possession.
+
+pass_direction_received
+
+str
+
+✓
+
+forward / backward / sideway left /
+sideway right
+
+None if the event does not start with a pass reception (start_type =
+pass_reception) or if the we cannot evaluate the pass trajectory.
+
+✓
+
+Direction of the ball before the player first touch and the start of the
+event.
+
+Page 41
+
+Attribute
+
+Type Description
+Related to the pass reception that started the player possession.
+
+Values
+
+OBR PO PP
+
+e.g. None, 30.1
+
+None if the event does not start with a pass reception (start_type =
+pass_reception) or if the we cannot evaluate the pass distance.
+pass_distance_received
+
+float
+
+✓
+Distance between the pass location to the location of the reception
+where the player started his possession.
+
+pass_range_received_id
+
+int
+
+1 (short) / 2 (medium) / 3 (long)
+Related to the pass reception that started the player possession.
+
+pass_range_received
+
+str
+
+None if the event does not start with a pass reception (start_type =
+pass_reception) or if the we cannot evaluate the pass distance.
+
+✓
+
+short (between 0 to 15 m) / medium
+(between 15 to 30m) / long (over 30m) /
+None
+✓
+
+Range of the pass received that led to the player possession.
+
+pass_outcome_id
+
+1 (successful) / 2 (unsuccessful) / 3
+(offside)
+
+int
+None, if the player possession did not end with a pass.
+
+pass_outcome
+
+targeted_passing_option_event_id
+
+str
+
+str
+
+✓
+
+successful / unsuccessful / offside /
+None
+
+✓
+
+Outcome of the pass that ended the player possession.
+
+Event ID of the passing option targeted by the player if he attempted a
+pass at the end of his possession.
+
+e.g. 7_5
+✓
+
+None if the player possession event did not end with a pass attempt.
+
+Page 42
+
+OBE
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP
+
+Player Option
+None / TRUE / FALSE
+None, if the passing option was not targeted or if we cannot appreciate
+its trajectory.
+If the passing option receives the ball
+- TRUE if the ball max z-coordinates during the pass is above 1.8
+metres.
+- Else FALSE.
+
+high_pass
+
+bool
+
+If the passing option is targeted but does not receive the ball
+- TRUE if the ball max z-coordinates during the pass is above 1.8
+metres.
+- Else None.
+
+✓
+
+Player Possession
+None if the player possession did not end up with a pass.
+If the pass is complete
+- TRUE if the ball max z-coordinates during the pass is above 1.8
+metres.
+- Else FALSE.
+If the pass is incomplete
+- TRUE if the ball max z-coordinates during the pass is above 1.8
+metres.
+- Else None (we cannot predict it).
+
+Page 43
+
+✓
+
+OBE
+
+Outcome
+These attributes describe the consequences of an event, including its impact on possession, team advantage, and defensive effectiveness.
+Attribute
+
+Type Description
+
+Values
+
+TRUE if there is a shot within the 10 seconds after the end of
+bool the event.
+Else FALSE.
+
+TRUE / FALSE
+
+lead_to_shot
+
+TRUE / FALSE
+
+lead_to_goal
+
+TRUE if there is a goal within the 10 seconds after the end of
+bool the event.
+Else FALSE.
+
+targeted
+
+bool
+
+TRUE if the player is targeted by a pass.
+Else FALSE.
+
+TRUE / FALSE
+
+received
+
+bool
+
+TRUE if the player receives the ball.
+Else FALSE.
+
+TRUE / FALSE
+
+None if the player does not receive the ball (received =
+FALSE).
+
+None / TRUE / FALSE
+
+received_in_space
+
+bool
+
+possession_danger
+
+TRUE if the Team in possession EPV is above 3% for at least TRUE / FALSE
+one frame during between the start of the engagement and the
+bool
+end of the player possession.
+Else FALSE.
+
+TRUE if the ball is received with the nearest opponent at least
+at 3 m away.
+Else FALSE.
+
+OBR PO PP OBE
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+Page 44
+
+Attribute
+
+Type Description
+This flag captures when the defending player was beaten by
+the player in possession while on-ball.
+
+beaten_by_possession
+
+Values
+
+OBR PO PP OBE
+
+TRUE / FALSE
+
+TRUE if the team in possession chances of scoring
+significantly increase during the player possession, and the
+bool defender, who was goal-side and close enough to intervene,
+fails to prevent this increase.
+The flag can be canceled in specific situations, such as
+interceptions, possession regain, or valid defensive positioning.
+
+✓
+
+Else FALSE.
+This flag captures when the defending player was beaten by
+the player in possession before he received the ball.
+
+beaten_by_movement
+
+TRUE / FALSE
+
+TRUE if the player fails to prevent a significant increase in the
+chances of scoring of the opponent team between the last
+pass and its reception, despite being positioned to control the
+receiving player at some point.
+bool
+This flag can be canceled in specific attenuating
+circumstances, such as when the defender faces a 2v1
+situation, maintains a stronger goal-side position, or when the
+reception occurs under non-threatening conditions, like a
+header or controlled positioning.
+
+✓
+
+Else FALSE.
+This flag captures when the defending annihilated a situation
+where the attacking team had high chances of scoring.
+stop_possession_danger
+
+bool
+
+TRUE / FALSE
+✓
+
+TRUE if the Team in possession has high chances of scoring
+at the end of the possession and the possession finishes by a
+pass intercepted by the defender or a regain and the defender
+
+Page 45
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+was close to the player in possession at the possession end.
+Else FALSE.
+This flag captures when the defending player reduced the
+danger in a situation where the attacking team had high
+chances of scoring.
+
+reduce_possession_danger
+
+TRUE / FALSE
+
+TRUE if the team in possession chances of scoring decreases
+bool significantly from its peak value to the end of an opponent's
+possession, and the defender is positioned goal-side and close
+(within 5 meters) or very close (within 2.5 meters) at the end of
+the possession. The possession must not end with a shot.
+
+✓
+
+Else, FALSE.
+
+force_backward
+
+TRUE if the player in possession was forced to play a
+backward pass due to the defensive engagement.
+In particular, the chances of the player in possession
+regressing need to grow significantly (+30% in percentage
+bool point) near the end of his possession and the player applying
+the engagement needs to be either very close or goalside.
+
+TRUE / FALSE
+
+✓
+
+Else FALSE.
+
+Page 46
+
+Physical
+These attributes capture movement and effort during an event, providing insights into player dynamics and positioning.
+Attribute
+
+Type Description
+On-ball Engagements
+Distance covered (in metres) by the player between when
+the player starts his physical effort (frame_physical_start)
+and when the event ends (frame_end).
+
+distance_covered
+
+float
+
+Values
+
+OBR
+
+PO
+
+PP
+
+OBE
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+1 (forward) / 2 (backward) / 3 (sideway left) /
+4 (sideway right)
+
+✓
+
+✓
+
+✓
+
+✓
+
+forward / backward / sideway left / sideway
+right
+
+✓
+
+✓
+
+✓
+
+✓
+
+e.g. 10
+
+Other Event Types
+Distance covered (in metres) by the player during the event
+(between frame_start and frame_end).
+It is based on the actual player's trajectory.
+
+trajectory_angle
+
+Refers to the angle of a player's movement, measured from e.g. 33
+the starting location of the event to where the event ends, in
+float
+relation to the horizontal line directed towards the opposing
+goal.
+
+trajectory_direction_id
+
+int
+
+trajectory_direction
+
+str
+
+Direction of the player trajectory.
+
+Page 47
+
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO
+
+PP
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+None if the player did not cover at least 2m during the event. TRUE / FALSE
+
+in_to_out
+
+TRUE if the player the player
+- moved sideway (here we use trajectory_angle absolute
+value is between 22.5° and 157°).
+bool
+- started from the center channel and ends in the half space
+or wide channel OR started in the half space and ends in
+the wide channel
+Else FALSE.
+None if the player did not cover at least 2m during the event. TRUE / FALSE
+
+out_to_in
+
+TRUE if the player the player
+- moved sideway (here we use trajectory_angle absolute
+value is between 22.5° and 157°).
+bool - started from the wide channel and ends in the center or a
+half space channel
+OR started in the half space and ends in the central channel
+Else FALSE.
+
+Page 48
+
+OBE
+
+Attribute
+
+Type Description
+The average speed of a player during the event (km/h)
+when he is detected on screen.
+
+speed_avg
+
+Values
+
+OBR
+
+PO
+
+PP
+
+OBE
+
+✓
+
+✓
+
+✓
+
+✓
+
+None / 1 (jogging) / 2 (running) / 3 (hsr) / 4
+(sprinting)
+
+✓
+
+✓
+
+✓
+
+✓
+
+None / jogging (if speed_avg below 15 km/h)
+/ running (if speed_avg between 15 km/h
+and 20km/h) / hsr (if speed_avg between 20
+km/h and 25km/h) / sprinting (if speed_avg
+above 25 km/h)
+
+✓
+
+✓
+
+✓
+
+✓
+
+e.g. 19.1
+
+None if there are not enough data points to compute the
+average or if the value is not considered trustworthy
+enough.
+float
+On-ball engagements
+Computed between the frame_physical_start and
+frame_end.
+Other event types
+Computed between the frame_start and frame_end.
+
+speed_avg_band_id
+
+int
+Speed band of the average speed.
+
+speed_avg_band
+
+str
+
+None if speed_avg cannot be delivered.
+
+Page 49
+
+Player In Possession Details
+These attributes describe the player in possession and their positioning throughout the event.
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO PP OBE
+
+location_to_player_in_possession_id_start
+
+int
+
+1 (behind) / 2 (same_line) / 3 (ahead)
+
+✓
+
+✓
+
+location_to_player_in_possession_start
+
+str
+
+✓
+
+✓
+
+location_to_player_in_possession_id_end
+
+int
+
+✓
+
+✓
+
+location_to_player_in_possession_end
+
+str
+
+Related position compared to the player in possession
+at the end of the event (on x).
+
+behind / same_line / ahead
+
+✓
+
+✓
+
+distance_to_player_in_possession_start
+
+float
+
+Distance (in metres) between player and player in
+possession at the start of the event.
+
+e.g. 10.9
+
+✓
+
+✓
+
+distance_to_player_in_possession_end
+
+float
+
+Distance (in metres) between player and player in
+possession at the end of the event.
+
+eg. 23.4
+
+✓
+
+✓
+
+player_in_possession_x_start
+
+float
+
+x coordinate of the player in possession at the start of
+the event.
+
+e.g. 10.8
+
+✓
+
+✓
+
+player_in_possession_y_start
+
+float
+
+y coordinate of the player in possession at the start of
+the event.
+
+e.g. 10.8
+
+✓
+
+✓
+
+player_in_possession_channel_id_start
+
+int
+
+ID of the channel of the player in possession at the start 1 (wide_left) / 2 (half_space_left) / 3 (center) / 4
+of the event
+(half_space_right) / 5 (wide_right)
+
+✓
+
+✓
+
+✓
+
+✓
+
+Related position compared to the player in possession
+at the start of the event (on x).
+
+1 (behind) / 2 (same_line) / 3 (ahead)
+
+Channel where the player in possession is when the
+event starts.
+player_in_possession_channel_start
+
+str
+
+behind / same_line / ahead
+
+Note that the ball may be travelling towards the player in
+possession at this moment and he may not have done
+his first touch yet.
+
+wide_left / half_space_left / center /
+half_space_right / wide_right
+
+Page 50
+
+Attribute
+player_in_possession_third_id_start
+
+player_in_possession_third_start
+
+player_in_possession_penalty_area_start
+
+Type Description
+int
+
+str
+
+Values
+
+OBR
+
+PO PP OBE
+
+ID of the third the player in possession is at the start of
+the event.
+
+1 (defensive_third) / 2 (middle_third) / 3
+(attacking_third)
+
+✓
+
+✓
+
+Third where the player in possession is when the event
+starts.
+
+defensive_third / middle_third / attacking_third
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+Note that the ball may be travelling towards the player in
+possession at this moment and he may not have done
+his first touch yet.
+
+TRUE if the player in possession is in the penalty area
+bool when the event starts.
+Else FALSE.
+
+TRUE / FALSE
+
+player_in_possession_x_end
+
+float
+
+x coordinate of the player in possession at the end of
+the event.
+
+e.g. -5.2
+
+player_in_possession_y_end
+
+float
+
+y coordinate of the player in possession at the end of
+the event.
+
+e.g. -5.2
+
+player_in_possession_channel_id_end
+
+int
+
+player_in_possession_channel_end
+
+str
+
+player_in_possession_third_id_end
+
+int
+
+1 (wide_left) / 2 (half_space_left) / 3 (center) / 4
+(half_space_right) / 5 (wide_right)
+Channel where the player in possession is when the
+wide_left / half_space_left / center /
+event ends. Note that the ball may be travelling towards half_space_right / wide_right
+the player in possession at this moment and he may not
+have done his first touch yet.
+1 (defensive_third) / 2 (middle_third) / 3
+(attacking_third)
+Third where the player in possession is when the event
+ends.
+
+player_in_possession_third_end
+
+str
+
+defensive_third / middle_third / attacking_third
+
+Note that the ball may be travelling towards the player in
+possession at this moment and he may not have done
+
+Page 51
+
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO PP OBE
+
+✓
+
+✓
+
+✓
+
+✓
+
+his first touch yet.
+player_in_possession_penalty_area_end
+
+TRUE if the player in possession is in the penalty area
+bool when the event ends.
+Else FALSE.
+
+TRUE / FALSE
+
+TRUE if the player was a passing option during the first TRUE / FALSE
+passing_option_at_player_possession_start bool 0.5 seconds of the associated player possession.
+Else FALSE.
+
+xloss_player_possession_start
+
+The probability that the player in possession will lose
+the ball during that possession (including via an
+float incomplete pass but excluding shots).
+
+TRUE / FALSE
+✓
+
+Computed at the start of the player possession.
+
+xloss_player_possession_end
+
+The probability that the player in possession will lose
+the ball during that possession (including via an
+float incomplete pass but excluding shots).
+
+e.g. 0.41
+✓
+
+Computed at the end of the player possession.
+
+xloss_player_possession_max
+
+The maximum probability observed at any point that the e.g. 0.41
+player in possession will lose the ball (including via an
+float incomplete pass but excluding shots).
+
+✓
+
+Evaluated over the duration of a player’s possession.
+
+xshot_player_possession_start
+
+float
+
+The probability that the player’s possession will result in e.g. 0.13
+a shot.
+
+✓
+
+Calculated at the start of a player’s possession.
+
+Page 52
+
+Attribute
+
+xshot_player_possession_end
+
+Type Description
+
+float
+
+Values
+
+OBR
+
+PO PP OBE
+
+The probability that the player’s possession will result in e.g. 0.15
+a shot.
+
+✓
+
+Calculated at the end of a player’s possession.
+
+xshot_player_possession_max
+
+float
+
+The maximum probability observed at any point that the e.g. 0.20
+player’s possession will end with a shot.
+
+✓
+
+Evaluated over the duration of a player’s possession.
+
+Page 53
+
+Player Targeted
+These attributes define the player targeted by a pass or engagement, capturing positioning, movement, danger and pass difficulty.
+Attribute
+
+Type Description
+Player Possessions
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+player_targeted_id
+
+int
+
+Values
+
+OBR PO PP OBE
+
+e.g. 11746
+
+Player ID of the player targeted by the player in possession
+if he attempted a pass at the end of his possession.
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+On-Ball Engagements
+Player ID of the (On Ball) Player that was targeted by the
+on-ball engagement.
+Player Possessions
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+player_targeted_name
+
+str
+
+e.g. "T. Alexander-Arnold"
+
+Name of the player targeted by the player in possession if he
+attempted a pass at the end of his possession.
+On-Ball Engagements
+Name of the (On Ball) Player that was targeted by the
+on-ball engagement.
+
+player_targeted_position_id
+
+int
+
+1(GK),2(LB),3(LWB),4(LCB),5(CB),6(RCB),7(RWB
+),8(RB),9(LDM),10(DM),11(RDM),12(LM),13(CM),
+14(RM),15(AM),16(LW),17(RW),18(LF),19(CF),20(
+RF)
+
+Page 54
+
+Attribute
+
+Type Description
+Player Possessions
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+player_targeted_position
+
+str
+
+Values
+
+OBR PO PP OBE
+
+GK,LB,LWB,LCB,CB,RCB,RWB,RB,LDM,DM,RD
+M,LM,CM,RM,AM,LW,RW,LF,CF,RF
+
+Position of the pass target.
+
+✓
+
+On-Ball Engagements
+Position of the (On Ball) Player that was targeted by the
+on-ball engagement."
+Related to the final pass attempted by the player in
+possession.
+player_targeted_x_pass
+
+float
+
+e.g. -3.23
+
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+✓
+
+x location of the targeted player at the moment of the pass.
+Related to the final pass attempted by the player in
+possession.
+player_targeted_y_pass
+
+float
+
+e.g. +12.45
+
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+✓
+
+y location of the targeted player at the moment of the pass.
+
+player_targeted_channel_pass_id
+
+int
+
+1 (wide_left) / 2 (half_space_left) / 3 (center) / 4
+(half_space_right) / 5 (wide_right)
+
+✓
+
+Page 55
+
+✓
+
+Attribute
+
+Type Description
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_channel_pass
+
+str
+
+Values
+
+OBR PO PP OBE
+
+wide_left / half_space_left / center /
+half_space_right / wide_right
+
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+✓
+
+Channel of the targeted player at the moment of the pass.
+
+player_targeted_third_pass_id
+
+1 (defensive_third) / 2 (middle_third) / 3
+(attacking_third)
+
+int
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_third_pass
+
+str
+
+✓
+
+defensive_third / middle_third / attacking_third
+
+None if the player possession event did not end with a pass
+attempt or we cannot determine who was the pass target.
+
+✓
+
+Third of the targeted player at the moment of the pass.
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_penalty_area_pass
+
+TRUE / FALSE / None
+
+None if the player possession event did not end with a pass
+bool attempt or we cannot determine who was the pass target.
+
+✓
+
+TRUE if the targeted player is in the penalty area when the
+pass occurs.
+Else FALSE.
+
+Page 56
+
+Attribute
+
+Type Description
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_x_reception
+
+Values
+
+OBR PO PP OBE
+
+e.g. -3.23
+
+float None if there was no pass or the pass was incomplete.
+
+✓
+
+x location of the targeted player at the moment of the pass
+reception.
+Related to the final pass attempted by the player in
+possession.
+player_targeted_y_reception
+
+e.g. +12.45
+
+float None if there was no pass or the pass was incomplete.
+
+✓
+
+y location of the targeted player at the moment of the pass
+reception.
+player_targeted_channel_reception_id
+
+1 (wide_left) / 2 (half_space_left) / 3 (center) / 4
+(half_space_right) / 5 (wide_right)
+
+int
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_channel_reception
+
+str
+
+✓
+
+wide_left / half_space_left / center /
+half_space_right / wide_right
+
+None if there was no pass or the pass was incomplete.
+
+✓
+
+Channel of the targeted player at the moment of the pass
+reception.
+player_targeted_third_reception_id
+
+int
+
+1 (defensive_third) / 2 (middle_third) / 3
+(attacking_third)
+
+✓
+
+Page 57
+
+Attribute
+
+Type Description
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_third_reception
+
+str
+
+Values
+
+OBR PO PP OBE
+
+defensive_third / middle_third / attacking_third
+
+None if there was no pass or the pass was incomplete.
+
+✓
+
+Third of the targeted player at the moment of the pass
+reception.
+Related to the final pass attempted by the player in
+possession.
+player_targeted_penalty_area_reception
+
+bool
+
+TRUE / FALSE / None
+
+None if there was no pass or the pass was incomplete.
+
+✓
+
+TRUE if the targeted player is in the penalty area at the
+moment of the pass reception.
+Else FALSE.
+player_targeted_distance_to_goal_start
+
+float
+
+Distance between the player targeted and the (active) player
+goal at the start of the event.
+
+✓
+
+player_targeted_distance_to_goal_end
+
+float
+
+Distance between the player targeted and the (active) player
+goal at the end of the event.
+
+✓
+
+player_targeted_angle_to_goal_start
+
+float
+
+Angle (in degree) of the player targeted with the (active)
+player goal at the start of the event.
+
+e.g. 45
+
+player_targeted_angle_to_goal_end
+
+float
+
+Angle (in degree) of the player targeted with the (active)
+player goal at the end of the event.
+
+e.g. 51
+
+player_targeted_average_speed
+
+float
+
+Average speed of the targeted player. Computed between
+frame_physical_start and frame_end.
+
+e.g. 14.3
+
+player_targeted_speed_avg_band_id
+
+int
+
+✓
+✓
+✓
+
+None / 1 (jogging) / 2 (running) / 3 (hsr) / 4
+(sprinting)
+
+✓
+
+Page 58
+
+Attribute
+
+Type Description
+Speed band associated to the target_average_speed.
+
+player_targeted_speed_avg_band
+
+str
+
+speed_difference
+
+float
+
+average_speed minus target_average_speed.
+
+Values
+
+OBR PO PP OBE
+
+None / jogging (if speed_avg below 15 km/h) /
+running (if speed_avg between 15 km/h and
+20km/h) / hsr (if speed_avg between 20 km/h and
+25km/h) / sprinting (if speed_avg above 25 km/h)
+
+✓
+
+e.g. 1.5
+✓
+
+None if any of these speeds is not available.
+Related to the final pass attempted by the player in
+possession.
+player_targeted_xpass_completion
+
+float
+
+e.g. 0.65
+
+None if the player possession event did not end with a pass
+attempt or if we cannot determine who was the pass target.
+
+✓
+
+Pass completion probability if the player attempted a pass at
+the end of his possession.
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_difficult_pass_target
+
+float
+
+TRUE / FALSE / None
+
+None if the player possession event did not end with a pass
+attempt or if we cannot determine who was the pass target.
+
+✓
+
+TRUE if the probability (xpass_completion) of completing a
+pass to the targeted player is below 0.65 i.e. the completion
+chances are below 65%.
+Else FALSE.
+
+Page 59
+
+Attribute
+
+Type Description
+Related to the final pass attempted by the player in
+possession.
+
+player_targeted_xthreat
+
+float
+
+Values
+
+OBR PO PP OBE
+
+e.g. 0.012
+
+None if the player possession event did not end with a pass
+attempt or if we cannot determine who was the pass target.
+
+✓
+
+Probability of a goal being scored in the next 10s after the
+pass was completed.
+Computed at the moment of the pass, whether the pass was
+completed or not.
+Related to the final pass attempted by the player in
+possession.
+
+TRUE / FALSE / None
+
+None if the player possession event did not end with a pass
+attempt or if we cannot determine who was the pass target.
+player_targeted_dangerous
+
+bool
+
+✓
+
+TRUE if the probability of a goal being scored in the next 10s
+after the pass was completed is about 2%.
+FALSE if it was below 2%.
+Computed at the moment of the pass, whether the pass was
+completed or not.
+Player possession
+If a pass occurs, distance between the pass location to the
+player targeted at the moment of the pass.
+
+interplayer_distance
+
+e.g. None, 30.1
+
+float
+
+✓
+
+✓
+
+✓
+
+✓
+
+Passing options
+Distance from the pass location to the player at the moment
+of the pass.
+interplayer_distance_range_id
+
+int
+
+1 (short) / 2 (medium) / 3 (long)
+
+Page 60
+
+Attribute
+
+Type Description
+Range of the interplayer_distance_range.
+
+Values
+
+OBR PO PP OBE
+
+short (between 0 to 15 m) / medium (between 15
+to 30m) / long (over 30m)
+
+interplayer_distance_range
+
+str
+
+On Ball Engagements
+float Distance between the player and the player targeted at the
+start of the event.
+
+e.g. 3.1
+
+interplayer_distance_start
+
+e.g. 1.8
+
+interplayer_distance_end
+
+On Ball Engagements
+float Distance between the player and the player targeted at the
+end of the event.
+
+interplayer_distance_min
+
+On Ball Engagements
+e.g. 0.6
+Minimal distance between the player and the player targeted
+float during the event when the player in possession has the ball
+(on-ball engagements can start before the future player in
+possession receives the ball).
+
+✓
+
+On Ball Engagements
+float Distance between the player and the player targeted when
+the player starts his physical activity.
+
+e.g. 6.9
+✓
+
+On Ball Engagements
+TRUE when the defender is at less than 1.5m and goalside
+at player possession start.
+bool Else FALSE.
+
+TRUE / FALSE
+
+interplayer_distance_start_physical
+
+close_at_player_possession_start
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+None if the defensive engagement does not overlap with the
+player possession start.
+
+Page 61
+
+Attribute
+
+Type Description
+Player possession
+Angle (in degree) between the direction of attack and the
+vector from the pass location to the player targeted at the
+moment of the pass.
+
+interplayer_angle
+
+Values
+
+OBR PO PP OBE
+
+e.g. None, 30.1
+
+float
+
+✓
+
+✓
+
+1 (forward) / 2 (backward) / 3 (sideway left) / 4
+(sideway right)
+
+✓
+
+✓
+
+✓
+
+✓
+
+Passing options
+Angle (in degree) between the direction of attack and the
+vector from the pass location to the player targeted at the
+moment of the pass.
+interplayer_direction_id
+
+int
+
+interplayer_direction
+
+str
+
+Direction associated to the interplayer_angle
+
+forward / backward / sideway left / sideway right
+
+angle_of_engagement
+
+float
+
+Angle (in degree) between the player speed and the target
+speed at the start of the event.
+
+e.g. 130
+TRUE / FALSE
+
+goal_side_start
+
+TRUE if the (active) player is closer to the center of his goal
+bool than the player targeted at the start of the event.
+Else FALSE.
+
+TRUE / FALSE
+
+goal_side_end
+
+TRUE if the (active) player is closer to the center of his goal
+bool than the player targeted at the end of the event.
+Else FALSE.
+
+✓
+
+✓
+
+✓
+
+Page 62
+
+Teammates And Opponent Context
+These attributes describe a player's positioning relative to the defensive line, team shape, and surrounding players.
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+last_defensive_line_x_start
+
+float x coordinate of the last defender at the start of the event.
+
+e.g. 10.1
+
+✓
+
+✓
+
+✓
+
+✓
+
+last_defensive_line_x_end
+
+float x coordinate of the last defender at the end of the event.
+
+e.g. 10.1
+
+✓
+
+✓
+
+✓
+
+✓
+
+e.g. -2.1
+
+delta_to_last_defensive_line_start
+
+Distance along the x axis (in metres) between the last
+float defender and the player at the start of the event (negative if
+the player passed the line).
+
+✓
+
+✓
+
+✓
+
+✓
+
+Distance along the x axis (in metres) between the last
+float defender and the player at the end of the event (negative if
+the player passed the line).
+
+e.g. 3.7
+
+delta_to_last_defensive_line_end
+
+✓
+
+✓
+
+✓
+
+✓
+
+delta_to_last_defensive_line_gain
+
+Difference between delta_to_last_defensive_line_end and
+float delta_to_last_defensive_line_start.
+
+e.g.10,1
+
+✓
+
+✓
+
+✓
+
+✓
+
+last_defensive_line_height_start
+
+float
+
+Distance (in metres) between the last defender and its own
+goal at the start of the event.
+
+e.g. 43.0
+
+✓
+
+✓
+
+✓
+
+✓
+
+last_defensive_line_height_end
+
+float
+
+Distance (in metres) between the last defender and its own
+goal at the end of the event.
+
+e.g. 28.8
+
+✓
+
+✓
+
+✓
+
+✓
+
+last_defensive_line_height_gain
+
+float
+
+Difference between last_defensive_line_height_end and
+last_defensive_line_height_start.
+
+e.g.10.1
+
+✓
+
+✓
+
+✓
+
+✓
+
+TRUE if the player location at the start of the event is inside
+the opponent team shape.
+Else FALSE.
+
+TRUE / FALSE
+✓
+
+✓
+
+✓
+
+inside_defensive_shape_start
+
+bool
+
+The team shape corresponds to the smallest convex polygon
+that contains all the players from the opponent team.
+
+Page 63
+
+Attribute
+
+inside_defensive_shape_end
+
+Type Description
+
+bool
+
+TRUE if the player location at the end of the event is inside
+the opponent team shape.
+Else FALSE.
+
+Values
+
+OBR PO PP OBE
+
+TRUE / FALSE
+✓
+
+✓
+
+✓
+
+The shape corresponds to the smallest convex polygon that
+contains all the players from the opponent team.
+n_teammates_ahead_end
+
+int
+
+Number of player teammates between the player and the
+opponent goal at the end of the event.
+
+e.g. 5
+
+n_teammates_ahead_start
+
+int
+
+Number of player teammates between the player and the
+opponent goal at the start of the event.
+
+e.g. 5
+
+n_player_targeted_opponents_ahead_start
+
+int
+
+Player targeted opponents between him and his opponent
+goal when the event starts.
+
+e.g. 2
+
+n_player_targeted_opponents_ahead_end
+
+int
+
+Player targeted opponents between him and his opponent
+goal when the event ends.
+
+e.g. 2
+
+n_player_targeted_teammates_ahead_start
+
+int
+
+Player targeted teammates between him and his opponent
+goal when the event starts.
+
+e.g. 2
+
+n_player_targeted_teammates_ahead_end
+
+int
+
+Player targeted teammates between him and his opponent
+goal at the end of the event.
+
+e.g. 2
+
+n_player_targeted_teammates_within_5m_start
+
+int
+
+Player targeted teammates within 5m from him at the start of e.g. 2
+the event.
+
+✓
+
+n_player_targeted_teammates_within_5m_end
+
+int
+
+Player targeted teammates within 5m from him at the end of
+the event.
+
+e.g. 2
+
+✓
+
+n_player_targeted_opponents_within_5m_start
+
+int
+
+Player targeted opponents within 5m from him at the start of
+the event.
+
+e.g. 2
+
+n_player_targeted_opponents_within_5m_end
+
+int
+
+Player targeted opponents within 5m from him at the end of
+the event.
+
+e.g. 2
+
+separation_start
+
+float Distance (in metres) from the closest opponent at the start of e.g. 3.7
+
+✓
+
+✓
+
+✓
+
+✓
+✓
+✓
+✓
+✓
+
+✓
+✓
+✓
+
+✓
+
+Page 64
+
+✓
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+the event.
+separation_end
+
+separation_gain
+
+float
+
+float
+
+Distance (in metres) from the closest opponent at the end of
+the event.
+
+e.g. 3.7
+
+Difference between separation_end and separation_start.
+
+e.g. 1.1
+
+A value > 0 shows an attacker's separation has increased.
+A value < 0 shows an attacker's separation has decreased.
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+Page 65
+
+Pass / Passing Options Details
+These attributes define key characteristics of passes, including distance, direction, difficulty, and threat level.
+Attribute
+
+pass_distance
+
+Type Description
+
+float
+
+If a pass occurs and is completed, distance between the
+pass location to the reception location.
+
+Values
+
+OBR PO PP OBE
+
+e.g. None, 30.1
+✓
+
+✓
+
+1 (short) / 2 (medium) / 3 (long)
+
+✓
+
+✓
+
+short (between 0 to 15 m) / medium (between
+15 to 30m) / long (over 30m)
+
+✓
+
+✓
+
+✓
+
+✓
+
+1 (forward) / 2 (backward) / 3 (sideway left) / 4
+(sideway right)
+
+✓
+
+✓
+
+forward / backward / sideway left / sideway
+right
+
+✓
+
+✓
+
+Else None.
+pass_range_id
+
+int
+
+pass_range
+
+str
+
+pass_angle
+
+If a pass occurs and is completed, angle (in degree)
+e.g. None, 30.1
+between the direction of attack and the vector from the pass
+float location to the reception location.
+None if there was no complete pass or if we cannot
+complete the angle of the pass.
+
+pass_direction_id
+
+int
+
+pass_direction
+
+str
+
+Range of the pass_distance.
+
+Direction associated with pass_angle.
+
+Page 66
+
+Attribute
+
+Type Description
+
+Values
+
+pass_ahead
+
+Player Possession
+True / False / None
+None if no pass occurs.
+TRUE if the player targeted is at least 3 m ahead of the
+player (in possession) along the x axis at the moment of the
+pass.
+bool Else FALSE.
+
+OBR PO PP OBE
+
+✓
+
+Passing Option
+TRUE if the player is at least 3m ahead of the player in
+possession at the passing moment.
+Else FALSE.
+
+passing_option_at_pass_moment
+
+TRUE if the player is a passing option during the 0.5
+seconds before the player in possession attempts a pass
+bool
+(decision frame).
+Else FALSE.
+
+TRUE / FALSE
+✓
+
+TRUE if the probability of a goal being scored in the next 10 TRUE / FALSE
+seconds (xthreat) is greater than 0.02, assuming a pass was
+successfully served to the player.
+Else FALSE.
+dangerous
+
+bool
+
+If the player was not targeted by a pass, it is calculated at
+the passing moment.
+
+✓
+
+If the player was targeted by a pass it is calculated at the
+moment of the pass.
+
+Page 67
+
+✓
+
+✓
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+TRUE if the probability (xpass_completion) of completing a TRUE / FALSE
+pass to the player is below 0.65 i.e. the completion chances
+are below 65%.
+Else FALSE.
+difficult_pass_target
+
+bool
+
+IIf the player was not targeted by a pass, it is calculated at
+the passing moment.
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+If the player was targeted by a pass it is calculated at the
+moment of the pass.
+The probability that a goal will be scored 10 seconds after a
+player is successfully served a pass.
+xthreat
+
+float
+
+e.g. 0.013
+
+If the player was not targeted by a pass, it is calculated at
+the passing moment.
+If the player was targeted by a pass it is calculated at the
+moment of the pass.
+The probability of completing a pass to the player.
+
+xpass_completion
+
+e.g. 0.732
+
+If the player was not targeted by a pass, it is calculated at
+float the passing moment.
+If the player was targeted by a pass it is calculated at the
+moment of the pass.
+The likelihood that a player will be served the ball.
+
+passing_option_score
+
+float
+
+If the player was not targeted by a pass, it is calculated at
+the passing moment.
+
+e.g. 0.791
+
+If the player was targeted by a pass it is calculated at the
+
+Page 68
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+moment of the pass.
+predicted_passing_option
+
+TRUE if the target is a passing option (xreceiver >= 0.6).
+bool Else FALSE.
+Frame considered as the passing moment.
+
+peak_passing_option_frame
+
+int
+
+n_simultaneous_passing_options
+
+int
+
+TRUE / FALSE
+
+✓
+
+e.g. 1662
+
+If the passing option is targeted it is the actual frame of the
+pass otherwise it is estimated (when xR.xP.xT is maximal
+and xR >= 0.6).
+The number of passing options that overlap with the current
+event or that happen less than 5 frames before or after it.
+
+✓
+
+✓
+
+e.g. 3
+
+✓
+
+Page 69
+
+Line Breaks
+These attributes describe whether a line breaking pass occurred or could have occurred.
+Attribute
+
+Type Description
+Player Possession
+None if the player possession did not end with a pass.
+
+Values
+
+OBR PO PP OBE
+
+TRUE / FALSE
+
+TRUE if the defense is considered as organised at the moment of the pass.
+Else FALSE.
+
+organised_defense
+
+bool
+
+Line breaks and defensive structure information are delivered only if the
+organised_defense is TRUE.
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+Passing Option
+TRUE if the defense is considered as organised at the passing moment.
+Else FALSE.
+Line breaks and defensive structure information are delivered only if the
+organised_defense is TRUE.
+
+defensive_structure
+
+int
+
+Defensive structure used to determine line breaks during the pass.
+It is dynamic and therefore differs from the formation.
+
+e.g. 442, None
+
+None if the organised_defense is FALSE or None.
+
+n_defensive_lines
+
+int
+
+None if organised_defense is FALSE or None.
+Else, correspond to the number of blocks of 2 or more players in the
+defensive_structure.
+
+e.g. 2 or 3
+
+Page 70
+
+Attribute
+
+Type Description
+None if organised_defense is FALSE or None.
+None if for the corresponding player possession, is_header is TRUE or
+hand_pass is TRUE.
+
+first_line_break
+
+bool
+
+Values
+
+OBR PO PP OBE
+
+None / TRUE / FALSE
+
+For Player Possession
+- Assuming the player possession ended with a pass, TRUE if it breaks the
+first line, Else FALSE. If the pass was incomplete, this value is predicted
+assuming the pass was completed.
+- None, if
+-- we cannot evaluate/predict properly the location of the pass and/or its
+reception
+-- OR if no pass was attempted
+-- OR if there was no first line.
+
+✓
+
+For Passing Options
+- TRUE if it could break the first line, Else FALSE. If the player did not
+receive the ball (because there was no pass attempt or the pass was
+incomplete), this value is predicted assuming the player had been served
+the ball.
+- None,
+-- if we know that a pass occurred but we are not able to have an accurate
+reception location
+-- OR if there was no first line.
+-- we cannot evaluate/predict properly the location of the pass and/or its
+reception
+first_line_break_type_id
+
+int
+
+None / 1 (Through) / 2 (Around)
+
+✓
+
+Page 71
+
+✓
+
+Attribute
+
+Type Description
+None, if we know that a pass occurred but we are not able to have an
+accurate reception location.
+
+first_line_break_type
+
+str
+
+Values
+
+OBR PO PP OBE
+
+None / Through / Around
+
+None if it did not broke the first line,
+Around if it broke the line around.
+Through if it broke the line through.
+
+✓
+
+If the player did not receive the ball, this value is predicted assuming the
+player had received the ball.
+Player Possession
+None / TRUE / FALSE
+- None, if we know that a pass occurred but we are not able to have an
+accurate reception location OR if no pass was attempted OR if there was no
+middle line.
+- Assuming the player possession ended with a pass, TRUE if it could break
+the middle line, Else FALSE. If the player did not receive the ball, this value
+is predicted assuming the player had been served the ball.
+second_last_line_break
+
+bool
+
+second_last_line_break_type_id
+
+int
+
+✓
+
+Passing Options
+- None, if we know that a pass occurred but we are not able to have an
+accurate reception location OR if there was no middle line.
+- TRUE if it could break the middle line, Else FALSE. If the player did not
+receive the ball, this value is predicted assuming the player had been
+served the ball.
+
+None / 1 (Through) / 2 (Around)
+
+✓
+
+Page 72
+
+✓
+
+Attribute
+
+Type Description
+None, if we know that a pass occurred but we are not able to have an
+accurate reception location.
+
+second_last_line_break_type
+
+str
+
+Values
+
+OBR PO PP OBE
+
+None / Through / Around
+
+None if it did not break the middle line,
+Around if it did break the line around.
+Through if it did break the line through.
+
+✓
+
+If the player did not receive the ball, this value is predicted assuming the
+player had received the ball.
+Player Possession
+None / TRUE / FALSE
+- None, if we know that a pass occurred but we are not able to have an
+accurate reception location OR if no pass was attempted OR if there was no
+last line.
+- Assuming the player possession ended with a pass, TRUE if it could break
+the last line, Else FALSE. If the player did not receive the ball, this value is
+predicted assuming the player had been served the ball.
+last_line_break
+
+bool
+
+last_line_break_type_id
+
+int
+
+✓
+
+Passing Option
+- None, if we know that a pass occurred but we are not able to have an
+accurate reception location OR if there was no last line.
+- TRUE if it could break the last line, Else FALSE. If the player did not
+receive the ball, this value is predicted assuming the player had been
+served the ball.
+
+None / 1 (through) / 2 (around)
+
+✓
+
+Page 73
+
+✓
+
+Attribute
+
+Type Description
+None, if we know that a pass occurred but we are not able to have an
+accurate reception location.
+
+last_line_break_type
+
+str
+
+Values
+
+OBR PO PP OBE
+
+None / Through / Around
+
+None if it did not break the last line,
+Around if it did break the line around.
+Through if it did break the line through.
+
+✓
+
+If the player did not receive the ball, this value is predicted assuming the
+player had received the ball.
+furthest_line_break_id
+
+None / 1 (first_line) / 2
+(second_last_line) / 3 (last_line)
+
+int
+
+✓
+
+✓
+
+✓
+
+✓
+
+None / 1 (Through) / 2 (Around)
+
+✓
+
+✓
+
+None / Through / Around
+
+✓
+
+✓
+
+Player Possession
+None / first_line /
+None if the player did not attempt a pass or if he attempted a pass that was second_last_line / last_line
+not a line breaking pass.
+
+furthest_line_break
+
+str
+
+If a pass was attempted and completed by the player in possession, line
+broken that is the closest to the opponent goal.
+If a pass was attempted but not completed by the player in possession, line
+that could have been broken if the pass was completed and that is the
+closest to the opponent goal.
+Passing Option
+None if at the passing moment, no line would have been broken with a
+complete pass.
+Line that could have been broken with a complete pass and that is the
+closest to the opponent goal.
+
+furthest_line_break_type_id
+
+int
+
+furthest_line_break_type
+
+str
+
+Type of the furthest line break.
+
+Page 74
+
+Player Bypassed
+These attributes help assess passing effectiveness in bypassing players.
+Attribute
+
+Type Description
+
+Values
+
+OBR
+
+PO PP OBE
+
+Opponents ahead of the player in possession when he passed the ball to the player.
+n_opponents_ahead_player_in_possessio
+n_pass_moment
+
+int
+
+None, if we know that a pass occurred but we are not able to have an accurate
+reception location.
+
+e.g. 4, , None
+
+✓
+
+✓
+
+e.g. 3, None
+
+✓
+
+✓
+
+✓
+
+✓
+
+Opponents ahead of the player when he received the ball.
+
+n_opponents_ahead_pass_reception
+
+int
+
+If the player in possession did not pass the ball to the player, it is calculated at the
+passing moment.
+None, if we know that a pass occurred but we are not able to have an accurate
+reception location.
+For a complete pass, the difference between the number of opponents ahead of the
+player in possession when he releases the ball and the number of opponents ahead of
+the player targeted when he receives the ball.
+
+n_opponents_bypassed
+
+int
+
+For an incomplete pass, or a passing option that was not targeted, difference between
+the number opponents ahead of the player in possession at the pass moment and the
+e.g. -1, 2, , None
+number opponents ahead of the potential pass target at the pass moment.
+It can be negative for a backward pass.
+None, if we know that a pass occurred but we are not able to have an accurate
+reception location.
+
+Page 75
+
+Player Possession Specifics
+These attributes provide further details on how a player possession is executed.
+Attribute
+
+Type Description
+
+Values
+
+one_touch
+
+TRUE if the player possession consisted of just one touch.
+bool Else FALSE.
+
+TRUE / FALSE
+
+TRUE / FALSE
+
+quick_pass
+
+TRUE if the possession lasts less than 1 second and ends with a
+bool pass but the player possession was not a one-touch.
+Else FALSE.
+
+carry
+
+forward_momentum
+is_header
+
+hand_pass
+
+OBR
+
+PO
+
+PP
+✓
+
+✓
+
+TRUE if the player covers at least 2 metres between the start and the TRUE / FALSE
+bool end of his possession.
+Else FALSE.
+
+✓
+
+TRUE if the forward momentum conditions are respected.
+bool Else FALSE.
+
+✓
+
+bool
+
+TRUE / FALSE
+
+TRUE if the possession was a header.
+Else FALSE.
+
+TRUE / FALSE
+
+None if the player is not the Goalkeeper.
+
+TRUE / FALSE / None
+
+✓
+
+TRUE if the GK possession finishes by a hand pass.
+FALSE if the player is the Goalkeeper and he did not do a hand
+bool pass.
+
+✓
+
+A GK can have the ball in his hand, then put it on the ground and do
+the pass with his foot - in this case the field hand_pass will be
+FALSE.
+
+Page 76
+
+OBE
+
+Attribute
+
+initiate_give_and_go
+
+Type Description
+
+Values
+
+TRUE when, within 2 seconds after passing the ball, the player
+performs an off-ball run of subtype behind, cross_receiver, overlap,
+pulling_half_space, pulling_wide, run_ahead_of_the_ball, underlap,
+support. ​
+bool
+For support runs we also impose that it starts in the attacking third
+and in a half_space or the central channel.
+Else FALSE.
+
+TRUE / FALSE
+
+OBR
+
+PO
+
+PP
+
+✓
+
+Page 77
+
+OBE
+
+Passing Option Availability
+These attributes describe the number and characteristics of passing options available to the player in possession.
+Attribute
+
+Type Description
+Related to the passing options available to the player in
+possession.
+
+n_passing_options
+
+Values
+
+OBR PO
+
+PP OBE
+
+e.g. 4
+
+int
+
+✓
+The number of passing options occurring during the player
+possession.
+
+n_off_ball_runs
+
+n_passing_options_line_break
+
+int
+
+The number of off-ball runs occurring during the player
+possession.
+
+e.g. 3
+
+Related to the passing options available to the player in
+possession.
+
+e.g. 1
+
+✓
+
+int
+
+✓
+Number of passing options events happening during the
+player possession that offer a line break.
+Related to the passing options available to the player in
+possession.
+
+e.g. 1
+
+Number of passing options events happening during the
+player possession that offer a first line break.
+n_passing_options_first_line_break
+
+int
+
+✓
+
+If a passing option would break several lines, we report only
+the closest line to the opponent goal that would be broken.
+As a result there is no double counting between
+passing_options_break_first_line,
+passing_options_middle_line and
+passing_options_break_last_line.
+
+Page 78
+
+Attribute
+
+Type Description
+Related to the passing options available to the player in
+possession.
+
+Values
+
+OBR PO
+
+PP OBE
+
+e.g. 1
+
+Number of passing options events happening during the
+player possession that offer a middle line break.
+n_passing_options_second_last_line_break
+
+int
+
+✓
+
+If a passing option would break several lines, we report only
+the closest line to the opponent goal that would be broken.
+As a result there is no double counting between
+passing_options_break_first_line,
+passing_options_middle_line and
+passing_options_break_last_line.
+Related to the passing options available to the player in
+possession.
+
+e.g. 1
+
+Number of passing options events happening during the
+player possession that offer a last line break.
+n_passing_options_last_line_break
+
+int
+
+Related to the passing options available to the player in
+possession.
+n_passing_options_ahead
+
+int
+
+✓
+
+If a passing option would break several lines, we report only
+the closest line to the opponent goal that would be broken.
+As a result there is no double counting between
+passing_options_break_first_line,
+passing_options_middle_line and
+passing_options_break_last_line.
+e.g. 1
+
+✓
+
+Number of passing options events happening during the
+player possession that are at least 3m ahead along the x
+axis at one moment.
+
+Page 79
+
+Attribute
+
+Type Description
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_dangerous_difficult
+
+Values
+
+OBR PO
+
+PP OBE
+
+e.g. 1
+
+int
+
+✓
+Number of passing options events happening during the
+player possession that are dangerous and difficult.
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_dangerous_not_difficult
+
+e.g. 1
+
+int
+
+✓
+Number of passing options events happening during the
+player possession that are dangerous and not difficult.
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_not_dangerous_not_difficult
+
+e.g. 1
+
+int
+
+✓
+Number of passing options events happening during the
+player possession that are not dangerous and not difficult.
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_not_dangerous_difficult
+
+e.g. 1
+
+int
+
+✓
+Number of passing options events happening during the
+player possession that are not dangerous and difficult.
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_at_start
+
+int
+
+e.g. 1
+
+Number of passing options available during the first 0.5
+seconds of the player possession.
+
+✓
+
+None if the player possession lasts less than 0.5 seconds
+(e.g. one touch pass).
+
+Page 80
+
+Attribute
+
+Type Description
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_at_end
+
+int
+
+Values
+
+OBR PO
+
+PP OBE
+
+e.g. 1
+
+Number of passing options available during the last 0.5
+seconds of the player possession.
+
+✓
+
+None if the player possession lasts less than 0.5 seconds
+(e.g. one touch pass).
+Related to the passing options available to the player in
+possession.
+n_passing_options_ahead_at_start
+
+int
+
+Number of passing options available during the first 0.5
+second of the player possession and are at least 3m ahead
+along the x axis from the player in possession during these
+first 0.5 sec.
+Related to the passing options available to the player in
+possession.
+
+n_passing_options_ahead_at_end
+
+int
+
+e.g. 1
+
+✓
+
+e.g. 1
+
+Number of passing options available during the last 0.5
+second of the player possession and are at least 3m ahead
+along the x axis from the player in possession during these
+last 0.5 sec.
+
+✓
+
+Page 81
+
+Off-Ball Run Specifics
+These attributes describe off-ball runs, their impact on defensive lines, and their connection to passing options.
+Attribute
+n_simultaneous_runs
+
+give_and_go
+
+Type Description
+int
+
+bool
+
+The number of off-ball runs that overlap with the current event
+or that happen less than 5 frames before or after it.
+
+e.g. 2
+
+TRUE if the player starts his off-ball run less than 2 sec after
+passing the ball.
+Else FALSE.
+
+TRUE / FALSE
+
+Applies only to off-ball runs of subtype behind, cross_receiver,
+overlap, pulling_half_space, pulling_wide,
+run_ahead_of_the_ball, underlap, support (for support run we
+also impose that it starts in the attacking third and in a
+half_space or the central channel).
+None if the off-ball run is not a run in behind (event_subtype
+<> "behind").
+
+intended_run_behind
+
+bool
+
+Values
+
+TRUE if a player shows intention to run behind the defensive
+line. This captures attackers who may hold their run to not be
+offside, or runs where players are tracked by a defender but
+there is intent to receive behind the defensive line.
+Else FALSE. For example a player does break the defensive
+line.
+
+OBR PO
+✓
+
+✓
+
+None / TRUE / FALSE
+
+✓
+
+Page 82
+
+PP OBE
+
+Attribute
+
+Type Description
+None if the off-ball run is not a run in behind (event_subtype
+<> "behind").
+
+push_defensive_line
+
+bool
+
+passing_option_at_start
+
+bool
+
+bool
+
+✓
+
+None / TRUE / FALSE
+
+TRUE if between end_time - 1s and end_time + 1s, there is at
+least a frame when the player is 1 meter behind the last
+defender.
+Else FALSE.
+TRUE if the player was a passing option during the first 0.5
+seconds of the off-ball run.
+Else FALSE.
+
+OBR PO
+
+None / TRUE / FALSE
+
+TRUE if the last defender moves back at least 10 m back
+during the off-ball run (between time_start and time_end).
+Else FALSE.
+None if the off-ball run is not a run in behind (event_subtype
+<> "behind").
+
+break_defensive_line
+
+Values
+
+✓
+
+TRUE / FALSE
+✓
+
+Page 83
+
+PP OBE
+
+Player Overtaken
+These attributes help evaluate a player's ability to overtake opponents through his off-ball runs.
+Attribute
+
+Type
+
+Description
+
+Values
+
+OBR
+
+int
+
+The number of opponents (goalkeeper excluded)
+between the opposing team goal at the end of the
+event.
+
+e.g. 3
+
+✓
+
+✓
+
+n_opponents_ahead_start
+
+int
+
+The number of opponents (goalkeeper excluded)
+between the opposing team goal at the start of the
+event.
+
+e.g. 5
+
+✓
+
+✓
+
+n_opponents_overtaken
+
+int
+
+Difference between opponents_ahead_start and
+opponents_ahead_end.
+
+e.g. 2
+
+✓
+
+✓
+
+n_opponents_ahead_end
+
+PO
+
+Page 84
+
+PP OBE
+
+On-Ball Engagement Specifics
+These attributes help evaluate defensive coordination and ability to affect an opponent's line breaking passing options.
+Attribute
+
+Type Description
+On-ball Engagements
+None if the player in possession did not have any line
+break option during the event that was not difficult
+(xpass > 0.65).
+
+affected_line_breaking_passing_option_id
+
+Values
+
+OBR PO PP OBE
+
+e.g. 7_5
+
+str
+
+✓
+If the player in possession had at least one passing
+option that was line breaking, and not difficult, then it
+corresponds to the event_id of one passing option with
+the highest xreceiver_score.
+
+affected_line_break_id
+
+None / 1 (first_line) / 2
+(second_last_line) / 3 (last_line)
+
+int
+On-ball Engagements
+None if the player in possession did not have a
+potential line breaking passing option.
+
+affected_line_break
+
+✓
+
+None / first_line / second_last_line /
+last_line
+
+str
+
+✓
+Else, the furthest line that was broken/would have been
+broken if the pass would have been attempted and
+completed.
+
+affected_line_breaking_passing_option_attempted
+
+bool
+
+On-ball Engagements
+None if the player in possession did have a potential
+line break passing option.
+
+TRUE / FALSE / None
+✓
+
+TRUE if the player in possession attempted a pass to
+his most likely line breaking option.
+
+Page 85
+
+Attribute
+
+affected_line_breaking_passing_option_xthreat
+
+Type Description
+
+float
+
+On-ball Engagements
+None if the player in possession did have a most likely
+line break passing option.
+
+Values
+
+OBR PO PP OBE
+
+e.g. 0.04
+✓
+
+xthreat of the player in possession most likely line
+breaking option.
+On-ball Engagements
+None if the player in possession did have a most likely
+line break passing option.
+affected_line_breaking_passing_option_dangerous
+
+TRUE / FALSE / None
+
+bool
+
+✓
+TRUE if the player in possession most likely line
+breaking option was dangerous.
+Else FALSE.
+
+affected_line_breaking_passing_option_run_subtype_id
+
+1 (behind) / 2 (coming_short) / 3
+(cross_receiver) / 4 (dropping_off) / 5
+(overlap) / 6 (pulling_half_space) / 7
+(pulling_wide) / 8
+(run_ahead_of_the_ball) / 9 (support) /
+10 (underlap)
+
+int
+
+On-ball Engagements
+None if the player in possession did have a most likely
+line break passing option.
+affected_line_breaking_passing_option_run_subtype
+
+str
+If the most likely passing option is associated with an
+off-ball run, then it corresponds to this off-ball run
+subtype.
+
+pressing_chain
+
+bool
+
+TRUE if the event is part of a pressing chain.
+Else FALSE.
+
+behind / coming_short / cross_receiver
+/ dropping_off / overlap /
+pulling_half_space / pulling_wide /
+run_ahead_of_the_ball / support /
+underlap / None
+
+TRUE / FALSE
+
+✓
+
+✓
+
+✓
+
+Page 86
+
+Attribute
+
+Type Description
+Number of pressing events in the pressing chain.
+
+pressing_chain_length
+
+int
+
+pressing_chain_end_type_id
+
+int
+
+Values
+
+OBR PO PP OBE
+
+e.g. 3
+✓
+
+None if the player was not involved in a pressing chain.
+1 (regain) / 2 (disruption) / None
+
+✓
+
+Outcome of the pressing chain the player was involved regain / disruption / None
+in.
+pressing_chain_end_type
+
+str
+
+pressing_chain_index
+
+int
+
+It represents the sequential identifier for pressing
+chains that occur during a match.
+
+e.g. 33
+
+int
+
+It represents the sequential position of the on-ball
+engagement within a specific pressing chain. The
+ordering is based on the start frame of the pressing.
+
+e.g. 2
+
+index_in_pressing_chain
+
+The number of defensive engagements towards the
+bool same target that have at least one frame in common
+with the current engagement.
+
+e.g. 2
+
+simultaneous_defensive_engagement_same_target
+
+simultaneous_defensive_engagement_same_target_rank
+
+consecutive_on_ball_engagements
+
+int
+
+✓
+
+None if the player was not involved in a pressing chain
+or if the team in possession kept possession without
+any interruption.
+
+✓
+
+✓
+
+✓
+
+If there is at least one simultaneous engagement on the e.g. 1
+same player targeted, rank of the current engagement
+ordered by frame start.
+Else None.
+
+TRUE if the player performed another on ball
+bool engagement in the preceding 4 seconds.
+Else FALSE.
+
+✓
+
+TRUE / FALSE
+✓
+
+Page 87
+
+Data Matching
+These attributes indicate to what extent key moments align with tracking data. The better the alignment, the more confident one can be in the
+accuracy of the event data.
+Attribute
+
+Type Description
+
+Values
+TRUE / FALSE
+
+is_player_possession_start_matched
+
+TRUE if we are able to match the start of the player possession
+bool with the tracking data based on the player and ball position.
+Else FALSE
+
+TRUE / FALSE
+
+is_player_possession_end_matched
+
+TRUE if we are able to match the end of the player possession
+bool with the tracking data based on the player and ball position.
+Else FALSE
+
+OBR PO PP OBE
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+None if the player possession did not start with a pass reception. TRUE / FALSE / None
+
+is_previous_pass_matched
+
+bool
+
+If the player possession started with a pass reception,
+- TRUE if the reception was matched with the tracking.
+- Else FALSE.
+Then it makes sense to look at all the fields that concern the
+pass received (“pass_distance_received”, …).
+
+Page 88
+
+Attribute
+
+Type Description
+
+Values
+
+OBR PO PP OBE
+
+None if the player possession did not end with a complete pass. TRUE / FALSE / None
+
+is_pass_reception_matched
+
+If the player possession ended with a complete pass,
+- TRUE if the reception was matched with the tracking
+bool - Else FALSE.
+
+✓
+
+✓
+
+✓
+
+✓
+
+✓
+
+Then it makes sense to look at all the fields that concern the
+pass (“pass_angle”, …).
+
+fully_extrapolated
+
+TRUE if the player is never detected in the video during the
+whole event meaning that his position is totally predicted by our
+bool extrapolation model (either because the player is not in the field
+of view of the camera or he is not detected).
+Else FALSE.
+
+TRUE / FALSE
+
+Page 89
+
+✓
+
+

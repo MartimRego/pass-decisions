@@ -210,31 +210,31 @@ As the student progresses:
 
 ---
 
-**Last Updated**: November 3, 2025 (Evening)  
+**Last Updated**: November 6, 2025 (Early Morning)  
 **Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
 **Hardware Status**: ✅ RAM Upgraded - No Memory Constraints  
 **Week 1 Progress**: ✅ Mon-Wed COMPLETE! MDP construction + xG model with Bayesian shrinkage (3 days ahead!)  
-**Current Phase**: 🔍 DEBUGGING - Manual validation of Section 5 results (Thu-Fri)
+**Current Phase**: � CRITICAL FIX - Correcting pass coordinate interpretation based on SkillCorner documentation
 
 ---
 
-## 📁 Project File Structure (Nov 3, 2025)
+## 📁 Project File Structure (Nov 6, 2025)
 
 ```
 Project/
 ├── src/
 │   ├── __init__.py
-│   ├── data_processing.py      # ✅ COMPLETE: Load, filter, classify passes + extract carries (853 lines)
+│   ├── data_processing.py      # 🔧 UPDATED: Fixed coordinate interpretation (857 lines)
 │   │   ├── load_premier_league_events()
 │   │   ├── extract_pass_events()  # Filters player_possession + clearances
 │   │   ├── extract_shot_events()  # ✅ Fixed: checks lead_to_goal column (12.34% goal rate)
 │   │   ├── extract_carry_events() # ✅ NEW: extracts carries (184K events, 91.6% success)
 │   │   ├── combine_passes_shots_carries()  # ✅ NEW: 3-way merge preserving all columns
-│   │   ├── rescale_coordinates()  # SkillCorner → FIFA (0-105m × 0-68m)
+│   │   ├── rescale_coordinates()  # 🔧 FIXED: Now uses (x_end, player_targeted_x_reception)
 │   │   ├── normalize_attack_direction()  # All teams attack left→right
 │   │   ├── classify_pass_length()  # short ≤10m, medium 10-25m, long >25m
 │   │   ├── classify_pass_direction()  # forward dx>5, backward dx<-5, lateral |dx|≤5
-│   │   └── classify_pass_type()  # 8 pass types + filtering
+│   │   └── classify_pass_type()  # 🔧 FIXED: Computes dx from pass TRAJECTORY, not passer movement
 │   │
 │   ├── state_action.py         # ✅ COMPLETE: MDP state/action space + masking (400 lines)
 │   │   ├── ACTION_NAMES  # Dict mapping 0-9 to action names (10 actions now!)
@@ -250,8 +250,8 @@ Project/
 │       └── apply_bayesian_shrinkage()  # Smooths sparse shooting data (α=10)
 │
 ├── data/
-│   ├── actions_encoded.parquet      # ✅ 460K actions with state encoding
-│   └── team_mdps/                   # ✅ 20 teams × 3 files = 60 MDP matrices
+│   ├── actions_encoded.parquet      # ⚠️ OUTDATED: needs rebuild with correct coordinates
+│   └── team_mdps/                   # ⚠️ OUTDATED: needs rebuild with correct coordinates
 │       ├── P_*.npy  # Transition probabilities (20 files)
 │       ├── R_*.npy  # Reward matrices (20 files)
 │       └── pi_*.npy # Optimal policies (20 files)
@@ -261,53 +261,59 @@ Project/
 │       ├── bayesian_smoothing_comparison.png  # ✅ Empirical vs smoothed xG
 │       └── ... (various MDP visualizations)
 │
-├── pass_decision_analysis.ipynb  # ✅ SECTIONS 1-5 COMPLETE (70+ cells)
-│   ├── Section 1: Imports (with module reloading)
-│   ├── Section 2: Data Exploration & Validation
-│   │   ├── 2.1: Load events (1.8M events)
-│   │   ├── 2.2: Extract passes (359K passes)
-│   │   ├── 2.3: Extract shots (8.7K shots, 12.34% goal rate)
-│   │   ├── 2.4: Extract carries (184K carries, 91.6% success)
-│   │   ├── 2.5: Combine actions (460K total actions)
-│   │   ├── 2.6: Coordinate transformation
-│   │   ├── 2.7: Pass classification (8 types)
-│   │   ├── 2.8: Statistics with carries included
-│   │   ├── 2.9: Visualizations (passes + shots + carries)
-│   │   ├── 2.10: Zone analysis (defensive/middle/attacking breakdown)
-│   │   └── 2.11: Final summary (460K actions ready)
-│   │
-│   ├── Section 3: Action Extraction Summary
-│   │
-│   ├── Section 4: State-Action Encoding
-│   │   ├── 4.1: Create field grid (22×34 = 748 states)
-│   │   ├── 4.2: Encode all actions (passes + shots + carries)
-│   │   ├── 4.3: Action availability mask implementation
-│   │   ├── 4.4: State-action pair analysis (87.4% coverage)
-│   │   ├── 4.5: Transition analysis
-│   │   ├── 4.6: Spatial coverage (3 heatmaps: passes, shots, carries)
-│   │   ├── 4.7: Zone-based action distribution
-│   │   └── 4.8: Chapter 4 summary with masking stats
-│   │
-│   └── Section 5: MDP Construction & Analysis  # ✅ COMPLETE (needs validation)
-│       ├── 5.1: Build MDP for all 20 teams (P, R, π matrices)
-│       ├── 5.2: Visualize Man City spatial policy
-│       ├── 5.3: Sparse data analysis (shooting probabilities)
-│       ├── 5.4: Smoothing comparison (threshold vs Bayesian)
-│       ├── 5.5: Position-based xG model (geometric)
-│       ├── 5.6: Bayesian shrinkage implementation
-│       └── 5.7: Comparison visualization (before/after smoothing)
+├── pass_decision_analysis.ipynb  # ⚠️ Needs re-run with corrected data processing
+│   └── (Structure same as before, but results will change with fix)
 │
-├── diagnostic_scripts/  # Validation scripts created during development
-│   ├── test_clearance_filter.py
-│   ├── analyze_pass_context.py
-│   ├── diagnose_pass_direction.py
-│   └── investigate_clearances.py
+├── debug.ipynb  # 🔍 NEW: Coordinate system investigation notebook
+│   ├── SkillCorner documentation analysis
+│   ├── Coordinate pair testing (5 hypotheses)
+│   ├── Validation with event data (0.95-0.99 correlation)
+│   └── Ball tracking validation attempts (coordinate system mismatch discovered)
 │
 └── README.md  # Project overview
 
 ```
 
-### Key Implementation Details
+### 🔧 CRITICAL BUG FIX (Nov 5-6, 2025)
+
+**Problem Discovered**: Pass distance calculations were WRONG!
+
+**Root Cause**:
+- We were using `(x_start, y_start) → (x_end, y_end)` to calculate pass distance
+- This measures the **passer's movement while dribbling**, NOT the **pass trajectory**!
+
+**Correct Interpretation** (from SkillCorner documentation):
+- `x_start, y_start`: Where player **first touches** the ball (start of possession)
+- `x_end, y_end`: Where player **releases the pass** (end of possession) ← **PASS ORIGIN**
+- `player_targeted_x_reception, y_reception`: Where **receiver gets the ball** ← **PASS DESTINATION**
+
+**The Fix**:
+```python
+# OLD (WRONG):
+passes['dx'] = passes['x_end_norm'] - passes['x_start_norm']  # Passer's movement!
+
+# NEW (CORRECT):
+passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']  # Ball's trajectory!
+```
+
+**Impact**:
+- ❌ **Bug symptom**: "Backward forward passes" (player dribbles forward 3m, then passes 20m backward → classified as "forward"!)
+- ✅ **Fix applied**: Now correctly measures pass distance and direction
+- ⚠️ **Data pipeline**: Needs complete rebuild (actions_encoded.parquet + all MDP matrices)
+
+**Validation Results**:
+- Event-to-event correlation: **0.95-0.99** (excellent match with SkillCorner's pass_distance)
+- Exact matches (<0.1m): 20-40%
+- Close matches (<0.5m): 60-80%
+- Mean difference: 1-2m
+
+**Why ball tracking validation failed**:
+- Event data: Coordinates are **mirrored per-team** (each team always attacks left→right)
+- Tracking data: Coordinates are **absolute pitch positions** (not mirrored)
+- Attempting to match them requires de-normalization based on team/period attack direction
+- For this project, event-to-event validation is sufficient proof
+
+### Key Implementation Details (Updated Nov 6)
 
 **Data Processing Pipeline** (`data_processing.py`):
 - Event extraction: Filters `event_type == 'player_possession'` (matches Module 3 methodology)
@@ -417,6 +423,52 @@ Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass d
 1. **Fundamental Matrix Approach**: Compute expected goals under different policies
 2. **Probabilistic Model Checking**: Compare action sequences (optional if time permits)
 3. **Counterfactual Policy Analysis**: Evaluate "what-if" scenarios
+
+### 🔍 Critical Lessons Learned (Nov 5-6, 2025)
+
+**The Importance of Reading Provider Documentation**:
+
+During debugging on Nov 5-6, we discovered a fundamental misunderstanding of SkillCorner's coordinate system that was causing "backward forward pass" bugs. This taught us that **ALWAYS consult the data provider's documentation FIRST** before making assumptions.
+
+**Key Discoveries from SkillCorner Documentation**:
+
+1. **Coordinate Meaning** (`20250216 - Dynamic Events CSV Specifications.pdf`):
+   - `x_start, y_start`: Where player **first touches** ball (possession start)
+   - `x_end, y_end`: Where player **releases the pass** (possession end) ← **NOT where player ends up after moving**
+   - `player_targeted_x_reception, y_reception`: Where **receiver gets the ball** ← **ONLY for successful passes**
+   
+2. **What We Got Wrong**:
+   - ❌ **Initial assumption**: `(x_start, y_start) → (x_end, y_end)` = pass distance
+   - ❌ **Reality**: This is the **passer's movement while dribbling**, not the pass!
+   - ✅ **Correct**: `(x_end, y_end) → (player_targeted_x_reception, y_reception)` = actual pass distance
+   
+3. **Why It Matters**:
+   - A player can dribble **forward** 5m, then pass **backward** 20m
+   - Our old calculation: `dx = 5 - 0 = 5` → classified as "forward" ❌
+   - Correct calculation: `dx = 20 - 5 = 15` → classified as "backward" ✅
+   
+4. **Coordinate System Differences**:
+   - **Event CSV data**: Coordinates are **mirrored per-team** (each team always attacks left→right)
+     - From docs: "coordinates are already mirrored in the csv, so that the team is always attacking from left to right"
+   - **Tracking JSON data**: Coordinates are **absolute pitch positions** (not per-team normalized)
+   - **Implication**: Cannot directly compare event coordinates to tracking coordinates without de-normalization
+   
+5. **Unsuccessful Passes**:
+   - `player_targeted_x_reception` and `y_reception` are **NULL** for unsuccessful passes
+   - SkillCorner does NOT provide `pass_range` or `pass_direction` for unsuccessful passes
+   - **Solution**: Must infer/estimate target locations for unsuccessful passes to build complete MDP transitions
+
+**Validation Approach That Worked**:
+- Event-to-event validation: Compare our calculated distances to SkillCorner's `pass_distance` column
+- Result: **0.95-0.99 correlation** (excellent!)
+- Tracking data validation failed due to coordinate system mismatch (but not needed)
+
+**Takeaway for Future Work**:
+- 📚 **ALWAYS read data provider documentation thoroughly**
+- 🔍 **Validate assumptions with actual data before building entire pipelines**
+- 🧪 **Test coordinate calculations on small samples first**
+- 📊 **Use correlation with provider's pre-computed fields as validation**
+- ⚠️ **Don't assume coordinate systems are the same across different data sources**
 
 ### Project Timeline (Nov 1-12, 2025)
 
