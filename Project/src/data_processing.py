@@ -10,23 +10,34 @@ Date: November 2025
 
 IMPORTANT CHANGES (Nov 6, 2025):
 ---------------------------------
-Pass direction classification now uses ANGLE-BASED method following SkillCorner
-documentation (page 24) instead of dx-threshold method:
+1. Pass direction classification uses ANGLE-BASED method following SkillCorner
+   documentation (page 24) instead of dx-threshold method:
 
-OLD METHOD (dx-threshold):
-- Forward: dx > 5m
-- Backward: dx < -5m  
-- Lateral: |dx| <= 5m
+   OLD METHOD (dx-threshold):
+   - Forward: dx > 5m
+   - Backward: dx < -5m  
+   - Lateral: |dx| <= 5m
 
-NEW METHOD (angle-based):
-- Forward: angle between -45° and +45°
-- Backward: angle < -135° or > 135°
-- Lateral: angle between 45° and 135° OR between -135° and -45°
-  (merges SkillCorner's 'sideway_left' and 'sideway_right')
+   NEW METHOD (angle-based):
+   - Forward: angle between -45° and +45°
+   - Backward: angle < -135° or > 135°
+   - Lateral: angle between 45° and 135° OR between -135° and -45°
+     (merges SkillCorner's 'sideway_left' and 'sideway_right')
 
-This captures the actual trajectory of passes, not just horizontal displacement.
-Example: A pass with dx=4m, dy=20m is now correctly classified as 'lateral' 
-(angle=78.7°) instead of 'lateral' by threshold.
+   This captures the actual trajectory of passes, not just horizontal displacement.
+   Example: A pass with dx=4m, dy=20m is now correctly classified as 'lateral' 
+   (angle=78.7°) instead of 'lateral' by threshold.
+
+2. Pass length classification simplified to SHORT/LONG (threshold at 25m):
+   - Short: <= 25m
+   - Long: > 25m
+   
+   This creates 6 pass types (short/long × backward/lateral/forward).
+
+3. Action space: 8 total actions
+   - 6 pass types (short/long × backward/lateral/forward)
+   - 1 shoot action
+   - 1 carry action
 
 See debug.ipynb for validation against SkillCorner's pass_direction field.
 """
@@ -658,7 +669,7 @@ def combine_passes_and_shots(
 
 def classify_pass_length(distance: pd.Series) -> pd.Series:
     """
-    Classify pass distance into short/medium/long categories.
+    Classify pass distance into short/long categories.
     
     Parameters
     ----------
@@ -668,19 +679,23 @@ def classify_pass_length(distance: pd.Series) -> pd.Series:
     Returns
     -------
     pd.Series
-        Category labels: 'short', 'medium', 'long'
+        Category labels: 'short', 'long'
         
     Notes
     -----
     Thresholds:
-    - short: <= 10m
-    - medium: 10-25m
+    - short: <= 25m
     - long: > 25m
+    
+    This creates 6 pass types when combined with 3 directions:
+    - short × (backward, lateral, forward) = 3 types
+    - long × (backward, lateral, forward) = 3 types
+    - Total: 6 pass types + shoot + carry = 8 action types
     """
     return pd.cut(
         distance,
-        bins=[-0.001, 10, 25, np.inf],  # -0.001 to include 0
-        labels=['short', 'medium', 'long']
+        bins=[-0.001, 25, np.inf],  # -0.001 to include 0
+        labels=['short', 'long']
     )
 
 
@@ -746,7 +761,7 @@ def classify_pass_direction(
 
 def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     """
-    Add pass type classification (8 categories) to pass events.
+    Add pass type classification (6 categories) to pass events.
     
     Filters out zero-distance passes (ball controls) and classifies
     remaining passes by length and direction.
@@ -763,16 +778,20 @@ def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
         - pass_distance: Euclidean distance in meters
         - dx: Change in x (progressive direction)
         - dy: Change in y (lateral direction)
-        - pass_length: 'short', 'medium', 'long'
+        - pass_length: 'short', 'long'
         - pass_direction: 'forward', 'lateral', 'backward'
         - pass_type: combined (e.g., 'short_forward')
         
     Notes
     -----
-    Creates 8 pass types:
-    - short/medium × backward/lateral/forward = 6 types
-    - long × backward/forward = 2 types (long_lateral merged into long_forward)
-    - Plus 'shoot' action (not from passes, added later)
+    Creates 6 pass types:
+    - short × backward/lateral/forward = 3 types
+    - long × backward/lateral/forward = 3 types
+    - Total action space: 6 passes + shoot + carry = 8 actions
+    
+    Pass length threshold:
+    - short: <= 25m
+    - long: > 25m
     
     Zero-distance passes are filtered out as they represent ball controls
     rather than actual passes. This improves data quality and success rates.
@@ -818,16 +837,9 @@ def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     # Combine into pass_type
     passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)
     
-    # Merge long_lateral into medium_lateral
-    # Long lateral passes are too rare (0.04%), merge with medium lateral
-    long_lateral_mask = passes['pass_type'] == 'long_lateral'
-    passes.loc[long_lateral_mask, 'pass_type'] = 'medium_lateral'
-    # Also update pass_length so classify_action works correctly
-    passes.loc[long_lateral_mask, 'pass_length'] = 'medium'
-    
     print(f"✅ Pass types classified:")
     print(f"   Length × Direction = {passes['pass_length'].nunique()} × {passes['pass_direction'].nunique()} = {passes['pass_type'].nunique()} unique types")
-    print(f"   (long_lateral merged into medium_lateral by updating pass_length)")
+    print(f"   Total action space: 6 passes + shoot + carry = 8 actions")
     
     return passes
 
@@ -843,8 +855,8 @@ def validate_pass_classifications(passes: pd.DataFrame) -> None:
         
     Notes
     -----
-    Reports special attention to long_backward passes to assess if this
-    action type is frequent enough to warrant inclusion in MDP action space.
+    Validates the 6 pass type classification system:
+    - short/long (threshold at 25m) × backward/lateral/forward
     """
     print("=" * 60)
     print("PASS CLASSIFICATION VALIDATION")
@@ -867,17 +879,6 @@ def validate_pass_classifications(passes: pd.DataFrame) -> None:
     print(type_dist)
     print(f"\nPercentages:")
     print((type_dist / len(passes) * 100).round(2))
-    
-    # Special focus on long_backward for action space decision
-    if 'long_backward' in type_dist.index:
-        long_backward_count = type_dist['long_backward']
-        long_backward_pct = (long_backward_count / len(passes)) * 100
-        print(f"\n🔍 LONG_BACKWARD PASSES:")
-        print(f"   Count: {long_backward_count:,}")
-        print(f"   Percentage: {long_backward_pct:.2f}%")
-        print(f"   {'⚠️ RARE - Consider merging/removing' if long_backward_pct < 2.0 else '✅ Sufficient for MDP'}")
-    else:
-        print(f"\n🔍 LONG_BACKWARD PASSES: None found")
     
     print("\n--- Distance Statistics by Length ---")
     print(passes.groupby('pass_length')['pass_distance'].describe())
