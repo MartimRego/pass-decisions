@@ -14,28 +14,26 @@ import pandas as pd
 from typing import Tuple, Dict, Optional
 
 
-# Action space definition (10 total actions: 8 pass types + shoot + carry)
-# Pass length thresholds: short ≤10m, medium 10-25m, long >25m
-# Pass direction thresholds: forward/backward >5m, lateral ≤5m
-# Note: long_lateral merged into medium_lateral (too rare)
+# Action space definition (8 total actions: 6 pass types + shoot + carry)
+# Pass length thresholds: short ≤25m, long >25m
+# Pass direction: forward/lateral/backward (angle-based)
+# This matches the pass prediction model output
 ACTION_NAMES = {
     0: 'short_backward',
     1: 'short_lateral',
     2: 'short_forward',
-    3: 'medium_backward',
-    4: 'medium_lateral',  # includes long_lateral
-    5: 'medium_forward',
-    6: 'long_backward',
-    7: 'long_forward',
-    8: 'shoot',
-    9: 'carry'
+    3: 'long_backward',
+    4: 'long_lateral',
+    5: 'long_forward',
+    6: 'shoot',
+    7: 'carry'
 }
 
 # Reverse mapping
 ACTION_IDS = {v: k for k, v in ACTION_NAMES.items()}
 
 # Absorbing state indices (added after field states)
-# If grid has 748 field states, absorbing states are 748, 749, 750
+# With 7×11 grid = 77 field states, absorbing states are 77, 78, 79
 ABSORBING_STATES = {
     'goal': lambda n_field_states: n_field_states,  # Successful shot
     'no_goal': lambda n_field_states: n_field_states + 1,  # Failed shot
@@ -49,9 +47,9 @@ class FieldGrid:
     
     Parameters
     ----------
-    n_rows : int, default=34
+    n_rows : int, default=7
         Number of grid rows (vertical divisions)
-    n_cols : int, default=22
+    n_cols : int, default=11
         Number of grid columns (horizontal divisions)
     pitch_length : float, default=105
         Pitch length in meters
@@ -61,17 +59,17 @@ class FieldGrid:
     Attributes
     ----------
     n_states : int
-        Total number of field states (n_rows * n_cols)
+        Total number of field states (n_rows * n_cols = 77)
     cell_width : float
-        Width of each cell in meters
+        Width of each cell in meters (~15m)
     cell_height : float
-        Height of each cell in meters
+        Height of each cell in meters (~6.2m)
     """
     
     def __init__(
         self,
-        n_rows: int = 34,
-        n_cols: int = 22,
+        n_rows: int = 7,
+        n_cols: int = 11,
         pitch_length: float = 105,
         pitch_width: float = 68
     ):
@@ -204,21 +202,21 @@ def classify_action(pass_length: str, pass_direction: str) -> int:
     Parameters
     ----------
     pass_length : str
-        'short', 'medium', or 'long'
+        'short' or 'long' (no medium)
     pass_direction : str
         'forward', 'lateral', or 'backward'
         
     Returns
     -------
     int
-        Action ID (0-7 for passes, 8 reserved for shoot)
+        Action ID (0-5 for passes, 6=shoot, 7=carry)
         
     Examples
     --------
     >>> classify_action('short', 'forward')
-    0
+    2
     >>> classify_action('long', 'lateral')
-    7
+    4
     """
     pass_type = f"{pass_length}_{pass_direction}"
     return ACTION_IDS.get(pass_type, -1)
@@ -307,18 +305,18 @@ def create_action_availability_mask(
     Returns
     -------
     np.ndarray
-        Boolean array of shape (n_states, n_actions) where True means action is available
+        Boolean array of shape (n_states, 8) where True means action is available
         
     Notes
     -----
     Constraints applied:
-    - Shooting (action=8): only allowed within shoot_distance_threshold of goal
-    - Backward passes (actions 0, 3, 6): disabled in leftmost column (defensive edge)
-    - Forward passes (actions 2, 5, 7): disabled in rightmost column (attacking edge)
-    - Carries (action=9): always available
+    - Shooting (action=6): only allowed within shoot_distance_threshold of goal
+    - Backward passes (actions 0, 3): disabled in leftmost column (defensive edge)
+    - Forward passes (actions 2, 5): disabled in rightmost column (attacking edge)
+    - Carries (action=7): always available
     - Lateral passes (actions 1, 4): always available
     """
-    n_actions = len(ACTION_NAMES)
+    n_actions = len(ACTION_NAMES)  # 8 actions
     mask = np.ones((grid.n_states, n_actions), dtype=bool)
     
     # Get shooting threshold in x-coordinate
@@ -335,19 +333,17 @@ def create_action_availability_mask(
         
         # Shooting constraint: disable if > 30m from goal
         if x_center < shoot_x_threshold:
-            mask[state, 8] = False  # Disable shooting
+            mask[state, 6] = False  # Disable shooting
         
         # Backward pass constraints: disable in leftmost column
         if col == 0:
             mask[state, 0] = False  # short_backward
-            mask[state, 3] = False  # medium_backward
-            mask[state, 6] = False  # long_backward
+            mask[state, 3] = False  # long_backward
         
         # Forward pass constraints: disable in rightmost column
         if col == grid.n_cols - 1:
             mask[state, 2] = False  # short_forward
-            mask[state, 5] = False  # medium_forward
-            mask[state, 7] = False  # long_forward
+            mask[state, 5] = False  # long_forward
     
     return mask
 
