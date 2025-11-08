@@ -239,105 +239,61 @@ def rescale_coordinates(
 
 def normalize_attack_direction(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Normalize attack direction so ALL teams attack left-to-right (0 → 105m).
+    Create normalized coordinate columns from rescaled coordinates.
     
-    Flips coordinates for teams attacking right-to-left based on the
-    'attacking_side' field in SkillCorner data.
+    ⚠️ IMPORTANT: SkillCorner data is ALREADY normalized!
+    According to SkillCorner documentation (Direction Of Play And Pitch Coordinates):
+    "We deliver every player orientation dependent attribute... assuming the team 
+    in possession is attacking from left to right. It means that, for each period, 
+    we mirror the coordinates of the team that is actually attacking from right to left."
+    
+    This function simply copies _rescaled columns to _norm columns for API compatibility.
+    NO FLIPPING is performed as the data is already in the correct orientation.
     
     Parameters
     ----------
     df : pd.DataFrame
-        Pass events with rescaled coordinates and 'attacking_side' column
+        Pass events with rescaled coordinates (already normalized by SkillCorner)
         
     Returns
     -------
     pd.DataFrame
-        Pass events with normalized coordinates (all attacking left→right)
+        Pass events with _norm columns (identical to _rescaled)
         
     Notes
     -----
-    This function flips BOTH x and y coordinates when attacking_side == 'right_to_left':
-    - x_norm = PITCH_LENGTH - x_rescaled
-    - y_norm = PITCH_WIDTH - y_rescaled
-    
-    The y-flip ensures tactical formations remain consistent when viewing
-    from the attacking team's perspective.
-    
-    Normalizes the following coordinate pairs (if present):
-    - x_start_rescaled → x_start_norm
-    - y_start_rescaled → y_start_norm
-    - x_end_rescaled → x_end_norm (pass origin)
-    - y_end_rescaled → y_end_norm
-    - player_targeted_x_reception_rescaled → player_targeted_x_reception_norm (pass destination)
-    - player_targeted_y_reception_rescaled → player_targeted_y_reception_norm
+    All teams in SkillCorner data already attack left→right (0 → 105m).
+    The 'attacking_side' field indicates which team was ORIGINALLY attacking which direction,
+    but SkillCorner has already flipped coordinates so all attacks go left→right.
     
     Examples
     --------
     >>> passes = rescale_coordinates(passes)
-    >>> passes = normalize_attack_direction(passes)
-    >>> # Now all teams attack from x=0 to x=105
+    >>> passes = normalize_attack_direction(passes)  # Just copies _rescaled to _norm
+    >>> # Data is already normalized by SkillCorner
     """
     df = df.copy()
     
-    if 'attacking_side' not in df.columns:
-        print("⚠️  'attacking_side' column not found - skipping normalization")
-        print("   Coordinates may not be normalized for attack direction!")
-        return df
+    # Simply copy _rescaled columns to _norm columns
+    # SkillCorner has already done the normalization for us!
     
-    # Normalize x_start_rescaled (origin position)
     if 'x_start_rescaled' in df.columns:
-        df['x_start_norm'] = np.where(
-            df['attacking_side'] == 'right_to_left',
-            PITCH_LENGTH - df['x_start_rescaled'],
-            df['x_start_rescaled']
-        )
+        df['x_start_norm'] = df['x_start_rescaled']
     
-    # Normalize y_start_rescaled
     if 'y_start_rescaled' in df.columns:
-        df['y_start_norm'] = np.where(
-            df['attacking_side'] == 'right_to_left',
-            PITCH_WIDTH - df['y_start_rescaled'],
-            df['y_start_rescaled']
-        )
+        df['y_start_norm'] = df['y_start_rescaled']
     
-    # Normalize x_end_rescaled (destination position)
     if 'x_end_rescaled' in df.columns:
-        df['x_end_norm'] = np.where(
-            df['attacking_side'] == 'right_to_left',
-            PITCH_LENGTH - df['x_end_rescaled'],
-            df['x_end_rescaled']
-        )
+        df['x_end_norm'] = df['x_end_rescaled']
     
-    # Normalize y_end_rescaled
     if 'y_end_rescaled' in df.columns:
-        df['y_end_norm'] = np.where(
-            df['attacking_side'] == 'right_to_left',
-            PITCH_WIDTH - df['y_end_rescaled'],
-            df['y_end_rescaled']
-        )
+        df['y_end_norm'] = df['y_end_rescaled']
     
-    # Normalize player_targeted_x_reception_rescaled (pass destination)
     if 'player_targeted_x_reception_rescaled' in df.columns:
-        df['player_targeted_x_reception_norm'] = np.where(
-            df['attacking_side'] == 'right_to_left',
-            PITCH_LENGTH - df['player_targeted_x_reception_rescaled'],
-            df['player_targeted_x_reception_rescaled']
-        )
+        df['player_targeted_x_reception_norm'] = df['player_targeted_x_reception_rescaled']
     
-    # Normalize player_targeted_y_reception_rescaled
     if 'player_targeted_y_reception_rescaled' in df.columns:
-        df['player_targeted_y_reception_norm'] = np.where(
-            df['attacking_side'] == 'right_to_left',
-            PITCH_WIDTH - df['player_targeted_y_reception_rescaled'],
-            df['player_targeted_y_reception_rescaled']
-        )
-    
-    # Report normalization stats
-    n_flipped = (df['attacking_side'] == 'right_to_left').sum()
-    n_total = len(df)
-    print(f"✅ Attack direction normalized:")
-    print(f"   Flipped: {n_flipped:,} / {n_total:,} ({n_flipped/n_total:.1%})")
-    print(f"   All teams now attack left→right (x: 0→105)")
+        df['player_targeted_y_reception_norm'] = df['player_targeted_y_reception_rescaled']
     
     return df
 

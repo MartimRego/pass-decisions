@@ -36,7 +36,7 @@ def main():
     
     # Create action availability mask
     print("\n2. Creating action availability mask...")
-    grid = FieldGrid(n_rows=22, n_cols=34)
+    grid = FieldGrid(n_rows=7, n_cols=11)
     action_mask = create_action_availability_mask(grid, shoot_distance_threshold=30.0)
     print(f"✅ Mask shape: {action_mask.shape}")
     print(f"   Masked (invalid) pairs: {(~action_mask).sum()} / {action_mask.size}")
@@ -48,8 +48,8 @@ def main():
     
     mdps = mdp.build_team_mdps(
         actions=actions,
-        n_states=748,
-        n_actions=10,
+        n_states=77,
+        n_actions=8,
         alpha=2.0,
         action_mask=action_mask,
         team_ids=None  # Build for all teams
