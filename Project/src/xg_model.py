@@ -89,7 +89,7 @@ def geometric_xg_model(angle, penalty_xg=0.76, penalty_angle_deg=36.8):
 def apply_bayesian_shrinkage(
     actions_df,
     grid,
-    shoot_action_id=8,
+    shoot_action_id=6,
     alpha=10,
     shoot_distance_threshold=30
 ):
@@ -102,7 +102,7 @@ def apply_bayesian_shrinkage(
         Actions dataframe with columns: state_from, action, success
     grid : FieldGrid
         Field grid for coordinate conversion
-    shoot_action_id : int, default=8
+    shoot_action_id : int, default=6
         Action ID for shooting
     alpha : int, default=10
         Prior strength (equivalent sample size for Bayesian shrinkage)

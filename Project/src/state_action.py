@@ -272,10 +272,10 @@ def add_state_action_encoding(
     def encode_state_from(row):
         if row.get('action_type') == 'carry':
             # Carries: state_from = where carry starts
-            return grid.xy_to_state(row['x_start_rescaled'], row['y_start_rescaled'])
+            return grid.xy_to_state(row['x_start_norm'], row['y_start_norm'])
         else:
             # Passes and shots: state_from = where ball is released/shot
-            return grid.xy_to_state(row['x_end_rescaled'], row['y_end_rescaled'])
+            return grid.xy_to_state(row['x_end_norm'], row['y_end_norm'])
     
     df['state_from'] = df.apply(encode_state_from, axis=1)
     
@@ -297,7 +297,7 @@ def add_state_action_encoding(
         elif action_type == 'carry':
             if success == 1:
                 # Successful carry: end at carry destination
-                return grid.xy_to_state(row['x_end_rescaled'], row['y_end_rescaled'])
+                return grid.xy_to_state(row['x_end_norm'], row['y_end_norm'])
             else:
                 # Failed carry: lose possession
                 return loss_possession_state
@@ -306,8 +306,8 @@ def add_state_action_encoding(
             if success == 1:
                 # Successful pass: end at reception point
                 return grid.xy_to_state(
-                    row['player_targeted_x_reception_rescaled'],
-                    row['player_targeted_y_reception_rescaled']
+                    row['player_targeted_x_reception_norm'],
+                    row['player_targeted_y_reception_norm']
                 )
             else:
                 # Failed pass: lose possession

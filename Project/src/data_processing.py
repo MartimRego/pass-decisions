@@ -193,24 +193,29 @@ def load_match_metadata(
 
 def rescale_coordinates(
     df: pd.DataFrame,
-    x_cols: Tuple[str, str] = ("x_end", "player_targeted_x_reception"),
-    y_cols: Tuple[str, str] = ("y_end", "player_targeted_y_reception")
+    x_cols: Tuple[str, ...] = ("x_start", "x_end", "player_targeted_x_reception"),
+    y_cols: Tuple[str, ...] = ("y_start", "y_end", "player_targeted_y_reception")
 ) -> pd.DataFrame:
     """
     Rescale SkillCorner coordinates to FIFA pitch scale (0-105m x 0-68m).
     
-    NOTE: x_end/y_end represent where the passer RELEASES the ball (pass origin),
-    and player_targeted_x_reception/y_reception is where the receiver gets it.
-    This gives us the actual PASS distance, not the passer's movement distance.
+    NOTE: For passes:
+    - x_start/y_start: where player first touches ball (possession start)
+    - x_end/y_end: where passer RELEASES the ball (pass origin)  
+    - player_targeted_x_reception/y_reception: where receiver gets it (pass destination)
+    
+    For carries:
+    - x_start/y_start: where carry begins
+    - x_end/y_end: where carry ends
     
     Parameters
     ----------
     df : pd.DataFrame
         Event data with SkillCorner coordinates
     x_cols : tuple of str
-        Names of x coordinate columns (pass origin, pass destination)
+        Names of x coordinate columns to rescale
     y_cols : tuple of str
-        Names of y coordinate columns (start, end)
+        Names of y coordinate columns to rescale
         
     Returns
     -------
@@ -927,6 +932,18 @@ def classify_pass_type(
         
         # Combine into pass_type
         passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)
+    
+    # CRITICAL: Ensure pass_length and pass_direction are always present and consistent with pass_type
+    # The merged data might have SkillCorner's original pass_direction values (sideway_left, sideway_right, None)
+    # but we need our standardized values (lateral, forward, backward) that match ACTION_NAMES
+    if 'pass_type' in passes.columns:
+        # Always derive pass_length and pass_direction from pass_type to ensure consistency
+        # Format is "{length}_{direction}" e.g., "short_forward"
+        split_types = passes['pass_type'].str.split('_', n=1, expand=True)
+        if split_types.shape[1] == 2:
+            passes['pass_length'] = split_types[0]
+            passes['pass_direction'] = split_types[1]
+            print(f"   ✓ Derived pass_length and pass_direction from pass_type (ensures consistency with ACTION_NAMES)")
     
     # Final statistics
     print(f"\n✅ Pass type classification complete:")
