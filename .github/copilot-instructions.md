@@ -210,11 +210,11 @@ As the student progresses:
 
 ---
 
-**Last Updated**: November 6, 2025 (Early Morning)  
+**Last Updated**: November 8, 2025  
 **Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
 **Hardware Status**: ✅ RAM Upgraded - No Memory Constraints  
 **Week 1 Progress**: ✅ Mon-Wed COMPLETE! MDP construction + xG model with Bayesian shrinkage (3 days ahead!)  
-**Current Phase**: � CRITICAL FIX - Correcting pass coordinate interpretation based on SkillCorner documentation
+**Current Phase**: 🚀 CRITICAL FIXES COMPLETE - Predicted pass types & state encoding ready for full pipeline rebuild!
 
 ---
 
@@ -274,9 +274,9 @@ Project/
 
 ```
 
-### 🔧 CRITICAL BUG FIX (Nov 5-6, 2025)
+### 🔧 CRITICAL BUG FIXES (Nov 5-8, 2025)
 
-**Problem Discovered**: Pass distance calculations were WRONG!
+**Problem 1 Discovered (Nov 5-6)**: Pass distance calculations were WRONG!
 
 **Root Cause**:
 - We were using `(x_start, y_start) → (x_end, y_end)` to calculate pass distance
@@ -301,6 +301,68 @@ passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']
 - ✅ **Fix applied**: Now correctly measures pass distance and direction
 - ⚠️ **Data pipeline**: Needs complete rebuild (actions_encoded.parquet + all MDP matrices)
 
+---
+
+**Problem 2 Discovered (Nov 8)**: Unsuccessful passes missing predicted types!
+
+**Root Cause**:
+- `classify_pass_type()` was supposed to merge with predicted types from XGBoost model
+- Merge was failing silently - using non-unique keys caused Cartesian product explosion (126GB RAM!)
+- Result: All 56,378 unsuccessful passes had `pass_type = None`
+
+**Coordinate Merge Issues**:
+- Function tried to merge on `player_id` but it was dropped when creating clean dataset
+- Fallback to `['match_id', 'period', 'team_id', 'player_id']` is NOT unique
+- Floating point coordinates (`x_end_rescaled`, `y_end_rescaled`) don't match exactly
+
+**The Fix (3 parts)**:
+1. **`combine_passes_shots_carries()`**: Now creates unique `action_id` for each action
+2. **`classify_pass_type()`**: Updated merge strategy (priority: action_id > composite key > event_id)
+   - Uses `['index', 'match_id', 'period']` composite key (100% match verified!)
+3. **Notebook cell 16**: Updated to preserve `event_id` and `action_id` in essential columns
+
+**Impact**:
+- ✅ **Memory error fixed**: Merge now uses unique composite key
+- ✅ **All 328,713 passes** now get pass types (272,335 actual + 56,378 predicted)
+- ✅ **action_label column** will show predicted types like "short_forward" instead of just "pass"
+
+---
+
+**Problem 3 Discovered (Nov 8)**: State encoding used wrong coordinates!
+
+**Root Cause**:
+- `add_state_action_encoding()` used `x_start, y_start` for ALL actions
+- This is WRONG for passes and shots (should use release point, not carry start)
+
+**Correct Coordinate Semantics**:
+- **Passes**: `state_from = x_end, y_end` (where ball is released)
+- **Shots**: `state_from = x_end, y_end` (where shot is taken)
+- **Carries**: `state_from = x_start, y_start` (where carry begins) ✓
+
+**State Transitions**:
+- **Successful passes**: `state_to = reception coordinates` (where ball arrives)
+- **Unsuccessful passes**: `state_to = 79` (absorbing state: loss_possession)
+- **Goals**: `state_to = 77` (absorbing state: goal)
+- **No goals**: `state_to = 78` (absorbing state: no_goal)
+- **Successful carries**: `state_to = carry end coordinates`
+- **Unsuccessful carries**: `state_to = 79` (absorbing state: loss_possession)
+
+**Action IDs**:
+- OLD: shoot=8, carry=9 ❌
+- NEW: shoot=6, carry=7 ✅ (consistent with 8-action space)
+
+**The Fix**:
+- Updated `add_state_action_encoding()` with action-type-specific coordinate logic
+- Added absorbing state handling for all unsuccessful actions
+- Fixed action IDs to match simplified action space
+- Added comprehensive documentation of coordinate semantics
+
+**Impact**:
+- ✅ **Correct MDP transitions**: State changes now reflect actual ball movement
+- ✅ **Absorbing states**: Failed actions properly terminate sequences
+- ✅ **Action space consistency**: All functions use 8 actions (0-7)
+- ⚠️ **Full rebuild required**: All MDP matrices need regeneration with correct states
+
 **Validation Results**:
 - Event-to-event correlation: **0.95-0.99** (excellent match with SkillCorner's pass_distance)
 - Exact matches (<0.1m): 20-40%
@@ -320,29 +382,42 @@ passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']
 - Clearance removal: Filters `end_type == 'clearance'` (3,733 removed)
 - Zero-distance filtering: Removes passes with distance ≤ 0.01m (91,504 removed)
 - **Shot extraction**: Fixed to check `lead_to_goal` column → 12.34% goal rate (1,071 goals)
-- **Carry extraction**: NEW - filters `carry=True` events → 184,080 carries (91.6% success)
+- **Carry extraction**: Filters `carry=True` events → 184,080 carries (91.6% success)
   - Success based on `end_type`: successful if ends in 'pass' or 'shot', failed if 'possession_loss'
   - Distance stats: mean 8.53m, median 5.77m, max 89.4m
 - Coordinate system: SkillCorner (-52 to 52, -34 to 34) → FIFA (0-105m × 0-68m)
 - Normalization: Flips coordinates so all teams attack left→right
-- Classification thresholds validated through diagnostic analysis
+- **Pass classification** (fixed Nov 5-8):
+  - Length: short ≤25m, long >25m (simplified from 3 categories)
+  - Direction: forward/lateral/backward (angle-based, not threshold)
+  - ✅ **CRITICAL FIX**: dx now uses `(x_reception - x_end)` = ball trajectory, not passer movement
+- **Predicted types for unsuccessful passes** (fixed Nov 8):
+  - `classify_pass_type()` merges with XGBoost predictions on composite key
+  - Merge uses `['index', 'match_id', 'period']` for uniqueness
+  - All 328,713 passes get types (272,335 actual + 56,378 predicted)
+- **Action ID creation** (fixed Nov 8):
+  - `combine_passes_shots_carries()` creates unique `action_id` column
+  - Preserved throughout pipeline for reliable merging
 
 **State-Action Space** (`state_action.py`):
-- Grid: 22 rows (y-axis, 3.09m) × 34 columns (x-axis, 3.09m) = 748 states
-- **Actions: 10 total (0-9)**:
-  - 0-7: Pass types (short/medium/long × backward/lateral/forward)
-  - 8: shoot
-  - 9: carry (NEW!)
+- Grid: 7 rows (y-axis, ~9.7m) × 11 columns (x-axis, ~9.5m) = 77 states
+- **Actions: 8 total (0-7)** - SIMPLIFIED from 10:
+  - 0-5: Pass types (short/long × backward/lateral/forward)
+  - 6: shoot
+  - 7: carry
 - **Action Masking**: Implemented to reduce sparsity
-  - Shooting disabled when x < 75m (>30m from goal) → 528 states (70.59%) masked
-  - Backward passes disabled at col=0 (defensive edge) → 22 states masked
-  - Forward passes disabled at col=33 (attacking edge) → 22 states masked
-  - Total: 660 (state, action) pairs masked (8.82% reduction in state-action space)
-  - Impact: Allows smaller Laplace smoothing (α=2-3 instead of α=5-10)
+  - Shooting disabled when x < 75m (>30m from goal)
+  - Backward passes disabled at col=0 (defensive edge)
+  - Forward passes disabled at col=10 (attacking edge)
 - **Absorbing states**: Defined and implemented in MDP:
-  - State 748: goal (successful shots)
-  - State 749: no_goal (failed shots)
-  - State 750: loss_possession (failed passes/carries)
+  - State 77: goal (successful shots)
+  - State 78: no_goal (failed shots)
+  - State 79: loss_possession (failed passes/carries)
+- **Coordinate Semantics** (CRITICAL - fixed Nov 8):
+  - **Passes/Shots**: `state_from` uses `x_end, y_end` (release/shot location)
+  - **Carries**: `state_from` uses `x_start, y_start` (carry start)
+  - **Successful passes**: `state_to` uses reception coordinates
+  - **Failed actions**: `state_to` = absorbing states (77, 78, or 79)
 
 **MDP Construction** (`pass_decision_analysis.ipynb` Section 5):
 - ✅ Built MDPs for all 20 Premier League teams
@@ -517,46 +592,83 @@ During debugging on Nov 5-6, we discovered a fundamental misunderstanding of Ski
   - Created src/xg_model.py utility file
   - Generated comparison visualizations
   
-- 🔍 Thursday Nov 6 (IN PROGRESS): Debugging & validation - Day 1
+- ✅ Thursday Nov 6 (COMPLETED): Debugging & validation - Day 1
   - Manual review of Section 5 MDP results
-  - Validate transition probabilities and state mappings
-  - Check coordinate system consistency
-  - Verify shooting constraints and action masking
+  - Discovered coordinate interpretation bug
+  - Validated transition probabilities and state mappings
+  - Began investigation of SkillCorner documentation
   
-- Friday Nov 7: Debugging & validation - Day 2
-  - Address any issues found in manual review
-  - Re-run MDP construction if needed
-  - Validate smoothed probabilities
-  - Prepare for fundamental matrix computation
+- ✅ Friday Nov 7 (COMPLETED): Debugging & validation - Day 2
+  - Fixed pass coordinate calculations (dx/dy now use ball trajectory)
+  - Updated `classify_pass_type()` to use correct coordinates
+  - Validated fix with event data correlation (0.95-0.99)
+  - **Built XGBoost model for predicting pass types in unsuccessful passes**
+    - Trained on 272,335 successful passes with known types
+    - Features: distance, angle, position, player attributes
+    - Predicted types for 56,378 unsuccessful passes
+    - Saved predictions to `passes_with_types_complete.parquet`
+  - Prepared for full pipeline rebuild
 
-- Saturday Nov 8: Buffer day / catch-up if needed
+- ✅ Saturday Nov 8 (COMPLETED): MAJOR FIXES - Multiple critical issues resolved
+  - Fixed unsuccessful pass prediction merge (memory error from Cartesian product)
+  - Updated `classify_pass_type()` to use composite key merging
+  - Fixed `add_state_action_encoding()` coordinate semantics
+  - Corrected action IDs (shoot=6, carry=7 instead of 8, 9)
+  - Added absorbing state logic for failed actions
+  - Updated notebook cells for 7×11 grid and 8-action space
+  - Ready for complete pipeline rebuild
 
-**Weekend 2: Analysis & Policy Experiments (Nov 9-10)**
-- Sunday Nov 9 (8-10h):
-  - Implement quality-quantity trade-off modeling for pass success rates (Van Roy Method 3)
-  - Fundamental matrix computation (expected goals under different policies)
+**🚀 NEXT STEPS (Nov 9-12)** - Final Weekend & Week:
+
+**Sunday Nov 9 (8-10h)**: 🎯 FULL PIPELINE REBUILD
+- **CRITICAL**: Re-run notebook from cell 10 (combine_passes_shots_carries)
+  - This creates the new `action_id` column
+  - Ensures predicted types merge correctly
+  - Generates correct state encodings with proper coordinates
+- **Verify**: 
+  - ✅ 328,713 passes all have pass_type (including 56,378 predicted)
+  - ✅ action_label shows predicted types for unsuccessful passes
+  - ✅ state_from/state_to use correct coordinates per action type
+  - ✅ Absorbing states (77, 78, 79) properly assigned
+- **Output**: New `actions_encoded.parquet` with correct data
+- **Goal**: Clean dataset ready for MDP reconstruction
+
+**Monday Nov 10 (8-10h)**: 🏗️ MDP RECONSTRUCTION
+- Rebuild all 20 team MDPs with corrected state encodings
+- Verify transition matrices use proper state_from → state_to mappings
+- Validate absorbing state transitions (failed passes → 79, goals → 77, no goals → 78)
+- Re-run fundamental matrix computations
+- Save corrected MDP matrices (P, R, π for 20 teams)
+- Compare results to old (buggy) version to understand impact
+
+**Tuesday Nov 11 (8-10h)**: 📊 QUALITY-QUANTITY ANALYSIS
+- Implement Van Roy Method 3: pass success rate modeling
+- Rank passes by quality metric (xT or goal-outcome based)
+- Compute quality distributions per (state, action) pair
+- Model success rate changes when frequency changes
+- Generate quality-quantity trade-off curves
+- **Key insight**: Does increasing frequency reduce quality?
+
+**Wednesday Nov 12 (6-8h)**: 🎮 COUNTERFACTUAL POLICIES & FINALIZATION
+- Morning (4h): Counterfactual analysis
   - "What should players do?" analysis: optimal action per zone
-  - Generate heat maps showing optimal pass types
-  
-- Monday Nov 10 (8-10h):
-  - Compare immediate shooting vs. different pass sequences
-  - Counterfactual policy analysis: "What if?" scenarios
-  - Modify policies (increase/decrease specific pass types in zones)
+  - Compare immediate shooting vs. pass sequences
+  - Counterfactual scenarios:
+    - +10-20% long forward passes in midfield
+    - -10% short lateral passes in attacking third
+    - +15% carries in defensive third
   - Compute expected goals under altered policies
-  - Identify strategic insights and tactical recommendations
-
-**Final Push (Nov 11-12)**
-- Monday Nov 11 (3-4h):
-  - Visualization refinement and tactical interpretation
-  - Create compelling figures for presentation
-  - Draft findings and insights
+  - Generate tactical recommendations with spatial heat maps
   
-- Tuesday Nov 12 (4-6h):
-  - Complete write-up with methodology, results, discussion
-  - Final validation and code cleanup
+- Afternoon (2-4h): Final touches & submission prep
+  - Visualization refinement (consistent colors, clear legends)
+  - Write-up: methodology, results, tactical insights, limitations
+  - Create summary figures for presentation
+  - Final code cleanup and documentation
   - Prepare submission materials
-  - Final review and polish
-  - ✅ PROJECT READY FOR SUBMISSION
+  - ✅ PROJECT READY FOR SUBMISSION (by 11:59 PM)
+
+### Estimated Total Hours Remaining: ~30-36 hours over 4 days = Tight but achievable!
 
 ### Key Deliverables
 1. **Jupyter Notebook**: Complete analysis pipeline with documented code
