@@ -18,8 +18,8 @@ from scipy.sparse import csr_matrix
 
 def build_transition_matrix(
     actions: pd.DataFrame,
-    n_states: int = 748,
-    n_actions: int = 10,
+    n_states: int = 77,
+    n_actions: int = 8,
     alpha: float = 2.0,
     team_id: Optional[int] = None,
     action_mask: Optional[np.ndarray] = None
@@ -33,10 +33,10 @@ def build_transition_matrix(
         Action events with state_from, action, state_to, success columns.
         Must include: state_from, action, state_to, success, action_type
         If team_id provided, must also have team_id column.
-    n_states : int, default=748
+    n_states : int, default=77
         Number of field states (not including absorbing states)
-    n_actions : int, default=10
-        Number of actions (8 pass types + shoot + carry)
+    n_actions : int, default=8
+        Number of actions (6 pass types + shoot + carry)
     alpha : float, default=2.0
         Laplace smoothing parameter. Higher = more smoothing.
         Recommended: 2-3 for team-specific MDPs, 1-2 for league-wide.
@@ -50,10 +50,10 @@ def build_transition_matrix(
     -------
     np.ndarray, shape (n_states + 3, n_actions, n_states + 3)
         Transition probabilities. State indices:
-        - 0 to n_states-1: field states
-        - n_states (748): goal (absorbing)
-        - n_states+1 (749): no_goal (absorbing)
-        - n_states+2 (750): loss_possession (absorbing)
+        - 0 to n_states-1: field states (77 states for 7×11 grid)
+        - n_states (77): goal (absorbing)
+        - n_states+1 (78): no_goal (absorbing)
+        - n_states+2 (79): loss_possession (absorbing)
         
     Notes
     -----
@@ -79,9 +79,9 @@ def build_transition_matrix(
     
     # Total number of states including absorbing
     n_total = n_states + 3
-    goal_state = n_states      # 748
-    no_goal_state = n_states + 1  # 749
-    loss_state = n_states + 2     # 750
+    goal_state = n_states      # 77
+    no_goal_state = n_states + 1  # 78
+    loss_state = n_states + 2     # 79
     
     # Initialize transition matrix
     P = np.zeros((n_total, n_actions, n_total))
@@ -108,9 +108,9 @@ def build_transition_matrix(
             # Empirical goal probability (with Laplace smoothing)
             goal_prob = (n_goals + alpha) / (n_total_shots + 2 * alpha)
             
-            # Action 8 is shoot
-            P[state, 8, goal_state] = goal_prob
-            P[state, 8, no_goal_state] = 1.0 - goal_prob
+            # Action 6 is shoot
+            P[state, 6, goal_state] = goal_prob
+            P[state, 6, no_goal_state] = 1.0 - goal_prob
     
     # 2. Handle move actions (passes & carries)
     print(f"  Processing {len(moves):,} moves (passes + carries)...")
@@ -174,8 +174,8 @@ def build_transition_matrix(
 
 def build_policy_matrix(
     actions: pd.DataFrame,
-    n_states: int = 748,
-    n_actions: int = 10,
+    n_states: int = 77,
+    n_actions: int = 8,
     team_id: Optional[int] = None,
     action_mask: Optional[np.ndarray] = None
 ) -> np.ndarray:
@@ -187,9 +187,9 @@ def build_policy_matrix(
     actions : pd.DataFrame
         Action events with state_from and action columns.
         If team_id provided, must also have team_id column.
-    n_states : int, default=748
+    n_states : int, default=77
         Number of field states
-    n_actions : int, default=10
+    n_actions : int, default=8
         Number of actions
     team_id : int, optional
         If provided, only use actions from this team
@@ -270,14 +270,14 @@ def build_policy_matrix(
 
 
 def build_reward_function(
-    n_states: int = 748
+    n_states: int = 77
 ) -> np.ndarray:
     """
     Build reward function R(s).
     
     Parameters
     ----------
-    n_states : int, default=748
+    n_states : int, default=77
         Number of field states
         
     Returns
@@ -288,24 +288,24 @@ def build_reward_function(
     Notes
     -----
     Simplified reward aligned with Van Roy et al. methodology:
-    - R(goal_state) = 1.0  (state 748)
-    - R(no_goal_state) = 0.0  (state 749)
-    - R(loss_possession_state) = 0.0  (state 750)
-    - R(field_states) = 0.0  (states 0-747)
+    - R(goal_state) = 1.0  (state 77)
+    - R(no_goal_state) = 0.0  (state 78)
+    - R(loss_possession_state) = 0.0  (state 79)
+    - R(field_states) = 0.0  (states 0-76)
     
     This creates a binary outcome: only scoring a goal receives reward.
     """
     # Total states: field states + 3 absorbing states
     rewards = np.zeros(n_states + 3)
-    rewards[n_states] = 1.0  # Goal state (index 748)
+    rewards[n_states] = 1.0  # Goal state (index 77)
     
     return rewards
 
 
 def build_team_mdps(
     actions: pd.DataFrame,
-    n_states: int = 748,
-    n_actions: int = 10,
+    n_states: int = 77,
+    n_actions: int = 8,
     alpha: float = 2.0,
     action_mask: Optional[np.ndarray] = None,
     team_ids: Optional[list] = None
@@ -317,9 +317,9 @@ def build_team_mdps(
     ----------
     actions : pd.DataFrame
         All actions with team_id column
-    n_states : int, default=748
+    n_states : int, default=77
         Number of field states
-    n_actions : int, default=10
+    n_actions : int, default=8
         Number of actions
     alpha : float, default=2.0
         Laplace smoothing parameter

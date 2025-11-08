@@ -245,30 +245,84 @@ def add_state_action_encoding(
         Actions with added columns:
         - state_from: starting state index
         - state_to: ending state index (or absorbing state)
-        - action: action ID (0-7 for passes, 8 for shoot, 9 for carry)
+        - action: action ID (0-5 for passes, 6 for shoot, 7 for carry)
+        
+    Notes
+    -----
+    Coordinate semantics:
+    - Passes/Shots: state_from = x_end, y_end (release/shot location)
+    - Carries: state_from = x_start, y_start (carry start point)
+    
+    Absorbing states (after field states):
+    - state 77 (goal): successful shot
+    - state 78 (no_goal): unsuccessful shot
+    - state 79 (loss_possession): unsuccessful pass or carry
     """
     df = df.copy()
     
-    # Encode starting states
-    df['state_from'] = df.apply(
-        lambda row: grid.xy_to_state(row['x_start_rescaled'], row['y_start_rescaled']),
-        axis=1
-    )
+    # Get absorbing state indices
+    n_field_states = grid.n_states  # 77 for 7×11 grid
+    goal_state = ABSORBING_STATES['goal'](n_field_states)  # 77
+    no_goal_state = ABSORBING_STATES['no_goal'](n_field_states)  # 78
+    loss_possession_state = ABSORBING_STATES['loss_possession'](n_field_states)  # 79
     
-    # Encode ending states
-    df['state_to'] = df.apply(
-        lambda row: grid.xy_to_state(row['x_end_rescaled'], row['y_end_rescaled']),
-        axis=1
-    )
+    # Encode starting states based on action type
+    # Passes and shots: use x_end, y_end (release/shot location)
+    # Carries: use x_start, y_start (carry start)
+    def encode_state_from(row):
+        if row.get('action_type') == 'carry':
+            # Carries: state_from = where carry starts
+            return grid.xy_to_state(row['x_start_rescaled'], row['y_start_rescaled'])
+        else:
+            # Passes and shots: state_from = where ball is released/shot
+            return grid.xy_to_state(row['x_end_rescaled'], row['y_end_rescaled'])
+    
+    df['state_from'] = df.apply(encode_state_from, axis=1)
+    
+    # Encode ending states based on action type and success
+    # Successful passes: reception coordinates
+    # Unsuccessful passes: absorbing state (loss_possession)
+    # Successful shots: absorbing state (goal)
+    # Unsuccessful shots: absorbing state (no_goal)
+    # Successful carries: carry end coordinates
+    # Unsuccessful carries: absorbing state (loss_possession)
+    def encode_state_to(row):
+        action_type = row.get('action_type', 'pass')
+        success = row.get('success', 0)
+        
+        if action_type == 'shoot':
+            # Shots always go to absorbing states
+            return goal_state if success == 1 else no_goal_state
+        
+        elif action_type == 'carry':
+            if success == 1:
+                # Successful carry: end at carry destination
+                return grid.xy_to_state(row['x_end_rescaled'], row['y_end_rescaled'])
+            else:
+                # Failed carry: lose possession
+                return loss_possession_state
+        
+        else:  # pass
+            if success == 1:
+                # Successful pass: end at reception point
+                return grid.xy_to_state(
+                    row['player_targeted_x_reception_rescaled'],
+                    row['player_targeted_y_reception_rescaled']
+                )
+            else:
+                # Failed pass: lose possession
+                return loss_possession_state
+    
+    df['state_to'] = df.apply(encode_state_to, axis=1)
     
     # Encode actions
     if 'action_type' in df.columns:
         # Handle passes, shots, and carries
         def get_action_id(row):
             if row.get('action_type') == 'shoot':
-                return 8
+                return 6  # Shoot action
             elif row.get('action_type') == 'carry':
-                return 9
+                return 7  # Carry action
             else:  # pass
                 return classify_action(row.get('pass_length', ''), row.get('pass_direction', ''))
         

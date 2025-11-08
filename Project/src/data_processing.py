@@ -610,14 +610,33 @@ def combine_passes_shots_carries(
     shots['action_type'] = 'shoot'
     carries['action_type'] = 'carry'
     
+    # CRITICAL: Preserve unique identifiers before concatenation
+    # When we concat with ignore_index=True, the DataFrame index is reset
+    # But we need event_id or index as a column for merging later
+    for df in [passes, shots, carries]:
+        # If event_id exists in columns, we're good
+        # If not, but index exists as a column, we're good  
+        # Otherwise, preserve the DataFrame index as a column called 'original_index'
+        if 'event_id' not in df.columns and 'index' not in df.columns:
+            df.reset_index(inplace=True)
+            if df.index.name != 'index':
+                # Rename whatever the index was to 'index'
+                df.rename(columns={df.columns[0]: 'index'}, inplace=True)
+    
     # Keep all columns from all DataFrames
     combined = pd.concat([passes, shots, carries], ignore_index=True)
+    
+    # CRITICAL: Create a unique action_id for each action
+    # This is needed for merging with predicted pass types later
+    # The index gets reset multiple times throughout the pipeline, so we need a persistent ID
+    combined['action_id'] = range(len(combined))
     
     print(f"✅ Combined {len(passes):,} passes + {len(shots):,} shots + {len(carries):,} carries")
     print(f"   = {len(combined):,} total actions")
     print(f"   Pass success rate:  {passes['success'].mean():.1%}")
     print(f"   Shot success rate:  {shots['success'].mean():.1%}")
     print(f"   Carry success rate: {carries['success'].mean():.1%}")
+    print(f"   Created unique action_id column for merging")
     
     return combined
 
@@ -759,25 +778,34 @@ def classify_pass_direction(
     return direction
 
 
-def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
+def classify_pass_type(
+    passes: pd.DataFrame,
+    use_predicted_types: bool = True,
+    predicted_types_path: str = '../PremierLeague_data/2024/processed/passes_with_types_complete.parquet'
+) -> pd.DataFrame:
     """
     Add pass type classification (6 categories) to pass events.
     
-    Filters out zero-distance passes (ball controls) and classifies
-    remaining passes by length and direction.
+    For successful passes: calculates pass type from reception coordinates.
+    For unsuccessful passes: uses predicted pass types from XGBoost model.
     
     Parameters
     ----------
     passes : pd.DataFrame
         Pass events with normalized coordinates (x_start_norm, x_end_norm, etc.)
+    use_predicted_types : bool, default=True
+        If True, load predicted types for unsuccessful passes from saved file.
+        If False, filter out unsuccessful passes (legacy behavior).
+    predicted_types_path : str, default='../PremierLeague_data/2024/processed/passes_with_types_complete.parquet'
+        Path to the complete pass dataset with predicted types for unsuccessful passes.
         
     Returns
     -------
     pd.DataFrame
-        Filtered passes with added columns:
-        - pass_distance: Euclidean distance in meters
-        - dx: Change in x (progressive direction)
-        - dy: Change in y (lateral direction)
+        Passes with added columns:
+        - pass_distance: Euclidean distance in meters (for successful passes)
+        - dx: Change in x (progressive direction, for successful passes)
+        - dy: Change in y (lateral direction, for successful passes)
         - pass_length: 'short', 'long'
         - pass_direction: 'forward', 'lateral', 'backward'
         - pass_type: combined (e.g., 'short_forward')
@@ -793,52 +821,119 @@ def classify_pass_type(passes: pd.DataFrame) -> pd.DataFrame:
     - short: <= 25m
     - long: > 25m
     
-    Zero-distance passes are filtered out as they represent ball controls
-    rather than actual passes. This improves data quality and success rates.
+    Unsuccessful passes get their pass_type from a pre-trained XGBoost model
+    that predicts the intended pass type based on game context features.
     
     Examples
     --------
     >>> passes = classify_pass_type(passes)
     >>> passes['pass_type'].value_counts()
     """
+    from pathlib import Path
+    
     passes = passes.copy()
+    n_total = len(passes)
     
-    # Compute pass distance and direction changes
-    # NOTE: x_end/y_end = pass origin (where ball is released)
-    #       player_targeted_x_reception/y_reception = pass destination (where receiver gets it)
-    # For unsuccessful passes, reception coords are NULL - filter those out later if needed
-    passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']
-    passes['dy'] = passes['player_targeted_y_reception_norm'] - passes['y_end_norm']
-    passes['pass_distance'] = np.sqrt(passes['dx']**2 + passes['dy']**2)
+    if use_predicted_types and Path(predicted_types_path).exists():
+        print(f"📦 Loading complete pass dataset with predicted types...")
+        print(f"   Path: {predicted_types_path}")
+        
+        # Load the complete dataset with all pass types
+        passes_complete = pd.read_parquet(predicted_types_path)
+        
+        # Merge pass_type, pass_length, pass_direction from complete dataset
+        # Match on unique identifiers to preserve all columns from input
+        merge_cols = ['pass_type', 'pass_length', 'pass_direction', 'pass_distance', 'dx', 'dy']
+        
+        # Create merge key - prioritize unique IDs over composite keys
+        # Strategy: Try single unique IDs first (action_id), then composite keys
+        id_cols = []
+        
+        if 'action_id' in passes.columns and 'action_id' in passes_complete.columns:
+            id_cols = ['action_id']
+            print(f"   Merging on: action_id")
+        elif 'index' in passes.columns and 'index' in passes_complete.columns and \
+             'match_id' in passes.columns and 'match_id' in passes_complete.columns and \
+             'period' in passes.columns and 'period' in passes_complete.columns:
+            # Composite key: index is not unique alone, but index + match_id + period IS unique
+            id_cols = ['index', 'match_id', 'period']
+            print(f"   Merging on composite key: index + match_id + period")
+        elif 'event_id' in passes.columns and 'event_id' in passes_complete.columns:
+            id_cols = ['event_id']
+            print(f"   ⚠️  Merging on: event_id (may not be unique!)")
+        else:
+            raise ValueError(
+                f"Cannot find suitable merge columns.\n"
+                f"Available in passes: {sorted(passes.columns.tolist())}\n"
+                f"Available in passes_complete: {sorted(passes_complete.columns.tolist())}\n"
+                f"Need either: action_id, or (index + match_id + period), or event_id"
+            )
+        
+        # Select only the columns we need from passes_complete
+        cols_to_merge = id_cols + [col for col in merge_cols if col in passes_complete.columns]
+        passes_complete_subset = passes_complete[cols_to_merge].copy()
+        
+        # Merge
+        passes = passes.merge(
+            passes_complete_subset,
+            on=id_cols,
+            how='left',
+            suffixes=('', '_predicted')
+        )
+        
+        # Count successful vs unsuccessful
+        n_successful = passes['success'].sum()
+        n_unsuccessful = len(passes) - n_successful
+        
+        print(f"✅ Pass types loaded and merged:")
+        print(f"   Total passes: {len(passes):,}")
+        print(f"   Successful (actual types):    {n_successful:,} ({n_successful/len(passes)*100:.1f}%)")
+        print(f"   Unsuccessful (predicted):     {n_unsuccessful:,} ({n_unsuccessful/len(passes)*100:.1f}%)")
+        
+    else:
+        # Legacy behavior: calculate for successful passes only, filter unsuccessful
+        print(f"⚠️  Predicted types file not found or use_predicted_types=False")
+        print(f"   Falling back to legacy behavior (filter unsuccessful passes)")
+        
+        # Compute pass distance and direction changes
+        # NOTE: x_end/y_end = pass origin (where ball is released)
+        #       player_targeted_x_reception/y_reception = pass destination (where receiver gets it)
+        passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']
+        passes['dy'] = passes['player_targeted_y_reception_norm'] - passes['y_end_norm']
+        passes['pass_distance'] = np.sqrt(passes['dx']**2 + passes['dy']**2)
+        
+        # Filter out passes with NULL reception coordinates (unsuccessful passes)
+        n_before_null = len(passes)
+        null_reception = passes[['player_targeted_x_reception_norm', 'player_targeted_y_reception_norm']].isna().any(axis=1)
+        if null_reception.any():
+            print(f"🔧 Filtering passes with NULL reception coordinates:")
+            print(f"   (These are unsuccessful passes where target location is unknown)")
+            print(f"   Removed: {null_reception.sum():,} ({null_reception.sum()/n_before_null*100:.2f}%)")
+            passes = passes[~null_reception].copy()
+        
+        # Filter out zero-distance passes (ball controls)
+        n_before = len(passes)
+        passes = passes[passes['pass_distance'] > 0].copy()
+        n_after = len(passes)
+        n_filtered = n_before - n_after
+        
+        print(f"🔧 Filtered zero-distance passes:")
+        print(f"   Removed: {n_filtered:,} ({n_filtered/n_before*100:.2f}%)")
+        print(f"   Remaining: {n_after:,}")
+        
+        # Classify length and direction
+        passes['pass_length'] = classify_pass_length(passes['pass_distance'])
+        passes['pass_direction'] = classify_pass_direction(passes['dx'], passes['dy'])
+        
+        # Combine into pass_type
+        passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)
     
-    # Filter out passes with NULL reception coordinates (unsuccessful passes without target location)
-    n_before_null = len(passes)
-    null_reception = passes[['player_targeted_x_reception_norm', 'player_targeted_y_reception_norm']].isna().any(axis=1)
-    if null_reception.any():
-        print(f"🔧 Filtering passes with NULL reception coordinates:")
-        print(f"   (These are unsuccessful passes where target location is unknown)")
-        print(f"   Removed: {null_reception.sum():,} ({null_reception.sum()/n_before_null*100:.2f}%)")
-        passes = passes[~null_reception].copy()
-    
-    # Filter out zero-distance passes (ball controls)
-    n_before = len(passes)
-    passes = passes[passes['pass_distance'] > 0].copy()
-    n_after = len(passes)
-    n_filtered = n_before - n_after
-    
-    print(f"🔧 Filtered zero-distance passes:")
-    print(f"   Removed: {n_filtered:,} ({n_filtered/n_before*100:.2f}%)")
-    print(f"   Remaining: {n_after:,}")
-    
-    # Classify length and direction
-    passes['pass_length'] = classify_pass_length(passes['pass_distance'])
-    passes['pass_direction'] = classify_pass_direction(passes['dx'], passes['dy'])
-    
-    # Combine into pass_type
-    passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)
-    
-    print(f"✅ Pass types classified:")
-    print(f"   Length × Direction = {passes['pass_length'].nunique()} × {passes['pass_direction'].nunique()} = {passes['pass_type'].nunique()} unique types")
+    # Final statistics
+    print(f"\n✅ Pass type classification complete:")
+    print(f"   Pass types: {passes['pass_type'].nunique()} unique")
+    print(f"   Expected: 6 types (short/long × backward/lateral/forward)")
+    if 'pass_length' in passes.columns and 'pass_direction' in passes.columns:
+        print(f"   Length × Direction = {passes['pass_length'].nunique()} × {passes['pass_direction'].nunique()}")
     print(f"   Total action space: 6 passes + shoot + carry = 8 actions")
     
     return passes
