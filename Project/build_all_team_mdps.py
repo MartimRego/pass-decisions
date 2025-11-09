@@ -43,7 +43,8 @@ def main():
     
     # Build all team MDPs
     print("\n3. Building MDPs for all 20 teams...")
-    print(f"   Using Laplace smoothing: α = 2.0")
+    print(f"   Laplace smoothing for passes/carries: α = 2.0")
+    print(f"   Bayesian shrinkage for shots: α = 10.0")
     print("="*70)
     
     mdps = mdp.build_team_mdps(
@@ -52,7 +53,10 @@ def main():
         n_actions=8,
         alpha=2.0,
         action_mask=action_mask,
-        team_ids=None  # Build for all teams
+        team_ids=None,  # Build for all teams
+        grid=grid,
+        bayesian_alpha=10.0,
+        shoot_distance_threshold=30.0
     )
     
     # Save MDPs to disk

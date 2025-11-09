@@ -14,6 +14,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Tuple, Optional
 from scipy.sparse import csr_matrix
+from . import xg_model
 
 
 def build_transition_matrix(
@@ -22,10 +23,15 @@ def build_transition_matrix(
     n_actions: int = 8,
     alpha: float = 2.0,
     team_id: Optional[int] = None,
-    action_mask: Optional[np.ndarray] = None
+    action_mask: Optional[np.ndarray] = None,
+    grid = None,
+    bayesian_alpha: float = 10.0,
+    shoot_distance_threshold: float = 30.0
 ) -> np.ndarray:
     """
-    Build transition probability matrix P(s, a, s') with Laplace smoothing.
+    Build transition probability matrix P(s, a, s') with smoothing.
+    
+    Uses Laplace smoothing for passes/carries and Bayesian shrinkage for shots.
     
     Parameters
     ----------
@@ -38,13 +44,19 @@ def build_transition_matrix(
     n_actions : int, default=8
         Number of actions (6 pass types + shoot + carry)
     alpha : float, default=2.0
-        Laplace smoothing parameter. Higher = more smoothing.
+        Laplace smoothing parameter for passes/carries. Higher = more smoothing.
         Recommended: 2-3 for team-specific MDPs, 1-2 for league-wide.
     team_id : int, optional
         If provided, only use actions from this team
     action_mask : np.ndarray, optional
         Boolean mask of shape (n_states, n_actions) indicating valid actions.
         If provided, invalid actions get zero probability.
+    grid : FieldGrid, optional
+        Grid object for Bayesian shrinkage calculation. Required for shooting priors.
+    bayesian_alpha : float, default=10.0
+        Prior strength for Bayesian shrinkage on shooting (equivalent sample size)
+    shoot_distance_threshold : float, default=30.0
+        Maximum distance from goal for shooting (meters)
         
     Returns
     -------
@@ -96,21 +108,37 @@ def build_transition_matrix(
     shoots = actions[actions['action_type'] == 'shoot'].copy()
     moves = actions[actions['action_type'].isin(['pass', 'carry'])].copy()
     
-    # 1. Handle shooting transitions
+    # 1. Handle shooting transitions with Bayesian shrinkage
     print(f"  Processing {len(shoots):,} shots...")
-    for state in range(n_states):
-        state_shots = shoots[shoots['state_from'] == state]
-        if len(state_shots) > 0:
-            # Count goals and misses
-            n_goals = state_shots['success'].sum()
-            n_total_shots = len(state_shots)
-            
-            # Empirical goal probability (with Laplace smoothing)
-            goal_prob = (n_goals + alpha) / (n_total_shots + 2 * alpha)
-            
-            # Action 6 is shoot
-            P[state, 6, goal_state] = goal_prob
-            P[state, 6, no_goal_state] = 1.0 - goal_prob
+    print(f"  Applying Bayesian shrinkage (α={bayesian_alpha})...")
+    
+    if grid is not None:
+        # Use Bayesian shrinkage with geometric xG prior
+        shoot_probs = xg_model.apply_bayesian_shrinkage(
+            actions_df=shoots,
+            grid=grid,
+            shoot_action_id=6,
+            alpha=bayesian_alpha,
+            shoot_distance_threshold=shoot_distance_threshold
+        )
+        
+        for state in range(n_states):
+            goal_prob = shoot_probs.get(state, 0.0)
+            if goal_prob > 0:
+                # Action 6 is shoot
+                P[state, 6, goal_state] = goal_prob
+                P[state, 6, no_goal_state] = 1.0 - goal_prob
+    else:
+        # Fallback to simple Laplace smoothing if grid not provided
+        print("  WARNING: No grid provided, using Laplace smoothing for shots")
+        for state in range(n_states):
+            state_shots = shoots[shoots['state_from'] == state]
+            if len(state_shots) > 0:
+                n_goals = state_shots['success'].sum()
+                n_total_shots = len(state_shots)
+                goal_prob = (n_goals + alpha) / (n_total_shots + 2 * alpha)
+                P[state, 6, goal_state] = goal_prob
+                P[state, 6, no_goal_state] = 1.0 - goal_prob
     
     # 2. Handle move actions (passes & carries)
     print(f"  Processing {len(moves):,} moves (passes + carries)...")
@@ -308,7 +336,10 @@ def build_team_mdps(
     n_actions: int = 8,
     alpha: float = 2.0,
     action_mask: Optional[np.ndarray] = None,
-    team_ids: Optional[list] = None
+    team_ids: Optional[list] = None,
+    grid = None,
+    bayesian_alpha: float = 10.0,
+    shoot_distance_threshold: float = 30.0
 ) -> dict:
     """
     Build separate MDP for each team in the dataset.
@@ -322,11 +353,17 @@ def build_team_mdps(
     n_actions : int, default=8
         Number of actions
     alpha : float, default=2.0
-        Laplace smoothing parameter
+        Laplace smoothing parameter for passes/carries
     action_mask : np.ndarray, optional
         Action availability mask to apply to all teams
     team_ids : list, optional
         List of team IDs to build MDPs for. If None, builds for all teams.
+    grid : FieldGrid, optional
+        Grid object for Bayesian shrinkage on shooting
+    bayesian_alpha : float, default=10.0
+        Prior strength for Bayesian shrinkage on shooting
+    shoot_distance_threshold : float, default=30.0
+        Distance threshold for shooting
         
     Returns
     -------
@@ -368,7 +405,8 @@ def build_team_mdps(
         
         # Build transition matrix for this team
         P = build_transition_matrix(
-            actions, n_states, n_actions, alpha, team_id, action_mask
+            actions, n_states, n_actions, alpha, team_id, action_mask,
+            grid, bayesian_alpha, shoot_distance_threshold
         )
         
         # Build policy matrix for this team
