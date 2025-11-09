@@ -43,57 +43,67 @@ def compute_fundamental_matrix(
     Each entry N[i,j] represents the expected number of times the system
     will be in state j given that it started in state i.
     """
-    n_states = P.shape[0]
+    # Number of transient (field) states
+    n_transient = pi.shape[0]
     
     # Build Q matrix: transitions between field states only
-    Q = np.zeros((n_states, n_states))
-    for s in range(n_states):
+    Q = np.zeros((n_transient, n_transient))
+    for s in range(n_transient):
         for a in range(P.shape[1]):
-            for s_prime in range(n_states):  # Only field states
+            for s_prime in range(n_transient):  # Only transient states
                 Q[s, s_prime] += P[s, a, s_prime] * pi[s, a]
     
     # Compute fundamental matrix
-    I = np.eye(n_states)
+    I = np.eye(n_transient)
     N = inv(I - Q)
     
     return N
 
 
-def expected_goals_from_state(
-    state: int,
-    N: np.ndarray,
-    pi: np.ndarray,
-    P: np.ndarray,
-    R: np.ndarray
-) -> float:
+def expected_goals_from_state(state, N, pi, P, R):
     """
-    Calculate expected goals starting from a given state.
+    Calculate the expected number of goals starting from a given state.
     
-    Parameters
-    ----------
-    state : int
-        Starting state
-    N : np.ndarray
-        Fundamental matrix
-    pi : np.ndarray
-        Policy matrix
-    P : np.ndarray
-        Transition matrix
-    R : np.ndarray
-        Reward vector
+    Uses the fundamental matrix N to account for all possible future paths
+    from the current state, weighted by the policy π.
+    
+    Args:
+        state: Starting state index (0-76 for field states)
+        N: Fundamental matrix (n_transient x n_transient), where N[i,j] gives
+           the expected number of times state j is visited starting from state i
+        pi: Policy matrix (n_transient x n_actions) giving action probabilities
+        P: Transition probability tensor (n_states x n_actions x n_states)
+        R: Reward vector (n_states,) where R[goal_state] = 1
         
-    Returns
-    -------
-    float
-        Expected number of goals
+    Returns:
+        Expected number of goals starting from the given state
     """
-    # TODO: Implement
-    # E[goals | s] = sum over all states s' of:
-    #   N[s, s'] * π(shoot | s') * P(s', shoot, goal) * R(goal)
+    n_transient = N.shape[0]
+    n_actions = pi.shape[1]
     
-    raise NotImplementedError("To be implemented")
-
-
+    # Find the goal state (where R=1)
+    goal_state = np.where(R == 1)[0][0]
+    
+    # Expected goals = sum over all states s' we'll visit of:
+    #   (expected visits to s') * (probability of shooting from s') * (probability shoot leads to goal)
+    expected_goals = 0.0
+    
+    for s_prime in range(n_transient):
+        # Expected number of times we visit state s' starting from state
+        visits = N[state, s_prime]
+        
+        # Sum over all actions from s' that could lead to goal
+        for action in range(n_actions):
+            # Probability of taking this action in state s'
+            action_prob = pi[s_prime, action]
+            
+            # Probability this action leads to goal state
+            goal_prob = P[s_prime, action, goal_state]
+            
+            # Accumulate: visits * action_prob * goal_prob
+            expected_goals += visits * action_prob * goal_prob
+    
+    return expected_goals
 def expected_goals_total(
     N: np.ndarray,
     pi: np.ndarray,
@@ -102,30 +112,44 @@ def expected_goals_total(
     possession_starts: np.ndarray
 ) -> float:
     """
-    Calculate total expected goals over a season.
+    Calculate expected goals per possession start.
     
-    Parameters
-    ----------
-    N : np.ndarray
-        Fundamental matrix
-    pi : np.ndarray
-        Policy matrix
-    P : np.ndarray
-        Transition matrix
-    R : np.ndarray
-        Reward vector
-    possession_starts : np.ndarray, shape (n_states,)
-        Number of possessions starting in each state
+    Weights the expected goals from each state by how often possessions
+    start in that state. This correctly accounts for possession sequences:
+    each possession contains multiple sequential actions, so we weight by
+    possession starts (first action in possession), not all actions.
+    
+    Args:
+        N: Fundamental matrix (n_transient x n_transient)
+        pi: Policy matrix (n_transient x n_actions)
+        P: Transition probability tensor (n_states x n_actions x n_states)
+        R: Reward vector (n_states,)
+        possession_starts: Distribution over possession starting states (n_transient,)
+                          Should sum to 1.0. Compute from actions where
+                          first_player_possession_in_team_possession == True
         
-    Returns
-    -------
-    float
-        Total expected goals for the season
+    Returns:
+        Expected goals per possession start
+        
+    Notes:
+        Multiply result by number of possessions (not total actions) to get
+        total expected goals for a season.
     """
-    # TODO: Implement
-    # E[goals] = sum_s possession_starts[s] * expected_goals_from_state(s, ...)
+    n_transient = N.shape[0]
     
-    raise NotImplementedError("To be implemented")
+    expected_goals_per_possession = 0.0
+    
+    for state in range(n_transient):
+        # Weight by how often possessions start in this state
+        start_prob = possession_starts[state]
+        
+        # Calculate expected goals from this state
+        eg_from_state = expected_goals_from_state(state, N, pi, P, R)
+        
+        # Accumulate weighted sum
+        expected_goals_per_possession += start_prob * eg_from_state
+    
+    return expected_goals_per_possession
 
 
 def optimal_action_per_state(
@@ -168,10 +192,16 @@ def optimal_action_per_state(
         expected_goals_per_action = np.zeros(n_actions)
         
         for a in range(n_actions):
-            # TODO: Compute E[goals | s, a]
-            # This requires modifying pi temporarily to force action a in state s
-            # Then computing expected goals
-            pass
+            # Create modified policy that forces action a in state s
+            pi_modified = pi.copy()
+            pi_modified[s, :] = 0.0
+            pi_modified[s, a] = 1.0
+            
+            # Recompute fundamental matrix with modified policy
+            N_modified = compute_fundamental_matrix(P, pi_modified)
+            
+            # Calculate expected goals from state s with this action forced
+            expected_goals_per_action[a] = expected_goals_from_state(s, N_modified, pi_modified, P, R)
         
         optimal_actions[s] = np.argmax(expected_goals_per_action)
     
