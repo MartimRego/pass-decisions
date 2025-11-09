@@ -210,11 +210,12 @@ As the student progresses:
 
 ---
 
-**Last Updated**: November 8, 2025  
+**Last Updated**: November 9, 2025  
 **Current Focus**: Final Project - Markov Decision Process Analysis of Pass Decision Making in Soccer  
 **Hardware Status**: ✅ RAM Upgraded - No Memory Constraints  
 **Week 1 Progress**: ✅ Mon-Wed COMPLETE! MDP construction + xG model with Bayesian shrinkage (3 days ahead!)  
-**Current Phase**: 🚀 CRITICAL FIXES COMPLETE - Predicted pass types & state encoding ready for full pipeline rebuild!
+**Week 2 Progress**: ✅ Thu-Sat COMPLETE! Critical fixes + full pipeline rebuild + Section 7 optimal actions analysis  
+**Current Phase**: ✅ **SECTION 7 COMPLETE!** Optimal action analysis with beautiful team comparisons. Next: Section 9 (Counterfactual), 8 (Sequential), 10 (Trade-offs)
 
 ---
 
@@ -455,10 +456,10 @@ passes['dx'] = passes['player_targeted_x_reception_norm'] - passes['x_end_norm']
 Applying Markov Decision Process (MDP) modeling to analyze short vs. long pass decisions in soccer, inspired by Van Roy et al.'s "Leaving Goals on the Pitch" paper on shooting decisions. Using Premier League 2024 season event data.
 
 ### Research Questions
-1. In which zones do short progressive passes lead to better goal-scoring chances than long direct balls?
-2. What is the probability of scoring after sequences of short passes vs. one long pass from midfield?
-3. How would altering pass type policies (e.g., 10-20% more long forward passes in specific zones) affect expected goals scored?
-4. What is the quality-quantity trade-off when teams increase pass frequency of certain types?
+1. ✅ **ANSWERED (Nov 9)**: In which zones do short progressive passes lead to better goal-scoring chances than long direct balls? → **Section 7 Optimal Action Analysis complete with 3-team comparison**
+2. 🎯 **PRIORITY #1 (Nov 10)**: How would altering pass type policies (e.g., 10-20% more long forward passes in specific zones) affect expected goals scored? → **Section 9 Counterfactual Policy Analysis**
+3. 🔄 **PRIORITY #2 (Nov 11)**: What is the probability of scoring after sequences of short passes vs. one long pass from midfield? → **Section 8 Sequential Action Analysis**
+4. 📊 **PRIORITY #3 (Nov 12)**: What is the quality-quantity trade-off when teams increase pass frequency of certain types? → **Section 10 Quality-Quantity Trade-offs**
 
 ### Technical Approach
 
@@ -618,57 +619,113 @@ During debugging on Nov 5-6, we discovered a fundamental misunderstanding of Ski
   - Updated notebook cells for 7×11 grid and 8-action space
   - Ready for complete pipeline rebuild
 
-**🚀 NEXT STEPS (Nov 9-12)** - Final Weekend & Week:
+**🚀 NEXT STEPS (Nov 10-12)** - Final Sprint to Finish Line:
 
-**Sunday Nov 9 (8-10h)**: 🎯 FULL PIPELINE REBUILD
-- **CRITICAL**: Re-run notebook from cell 10 (combine_passes_shots_carries)
-  - This creates the new `action_id` column
-  - Ensures predicted types merge correctly
-  - Generates correct state encodings with proper coordinates
-- **Verify**: 
-  - ✅ 328,713 passes all have pass_type (including 56,378 predicted)
-  - ✅ action_label shows predicted types for unsuccessful passes
-  - ✅ state_from/state_to use correct coordinates per action type
-  - ✅ Absorbing states (77, 78, 79) properly assigned
-- **Output**: New `actions_encoded.parquet` with correct data
-- **Goal**: Clean dataset ready for MDP reconstruction
+**Monday Nov 10 (8-10h)**: 🎯 SECTION 9 - COUNTERFACTUAL POLICY ANALYSIS (PRIORITY #1)
+- **"What if" scenarios**: Modify team policies and compute impact
+  - "What if Manchester City shot 20% more often from edge of box?"
+  - "What if Liverpool carried 15% less and passed forward instead?"
+  - "What if Nottingham increased long forward passes by 20% in midfield?"
+- **Implementation**:
+  - Create modified policy matrices (π_modified) for each scenario
+  - Recompute fundamental matrices under new policies
+  - Calculate expected goals difference (E[goals_new] - E[goals_current])
+  - Generate spatial heatmaps showing zones where changes have biggest impact
+- **Deliverables**: 
+  - 3-5 counterfactual scenarios per team
+  - Side-by-side policy comparison visualizations
+  - Expected goals impact quantification
+  - Tactical recommendations based on findings
 
-**Monday Nov 10 (8-10h)**: 🏗️ MDP RECONSTRUCTION
-- Rebuild all 20 team MDPs with corrected state encodings
-- Verify transition matrices use proper state_from → state_to mappings
-- Validate absorbing state transitions (failed passes → 79, goals → 77, no goals → 78)
-- Re-run fundamental matrix computations
-- Save corrected MDP matrices (P, R, π for 20 teams)
-- Compare results to old (buggy) version to understand impact
+**Tuesday Nov 11 (8-10h)**: 🔄 SECTION 8 - SEQUENTIAL ACTION ANALYSIS (PRIORITY #2)
+- **Research Question**: Do multiple short passes yield higher E[goals] than one long pass?
+- **Path comparison**: 
+  - State A → State B via one long_forward pass
+  - State A → State B via two short_forward passes through intermediate state
+  - Compare expected goals for both paths
+- **Multi-step analysis**:
+  - Compute E[goals | s, sequence] for different action sequences
+  - Build "build-up tree" from defensive third to attacking third
+  - Compare expected values of different tactical approaches
+- **Visualizations**:
+  - Sankey diagrams showing flow through states
+  - Heatmaps of optimal path choices by starting position
+  - Distribution of E[goals] by sequence length
+- **Key insight**: When does patient build-up beat direct play?
 
-**Tuesday Nov 11 (8-10h)**: 📊 QUALITY-QUANTITY ANALYSIS
-- Implement Van Roy Method 3: pass success rate modeling
-- Rank passes by quality metric (xT or goal-outcome based)
-- Compute quality distributions per (state, action) pair
-- Model success rate changes when frequency changes
-- Generate quality-quantity trade-off curves
-- **Key insight**: Does increasing frequency reduce quality?
+**Wednesday Nov 12 (10-12h)**: 📊 SECTION 10 - QUALITY-QUANTITY TRADE-OFFS + FINAL POLISH (PRIORITY #3)
+- **Morning (6-8h)**: Quality-Quantity Analysis
+  - **Van Roy Method 3 implementation**:
+    - Rank actions by quality metric (expected threat or goal outcome)
+    - Compute quality distributions per (state, action) pair
+    - Model: P_success(quantity) = baseline_success × (1 - diminishing_factor × extra_attempts)
+  - **Trade-off curves**:
+    - Plot success rate vs. action frequency for each action type
+    - Identify optimal frequency for each (state, action) pair
+    - Compare teams: do high-possession teams show steeper drop-offs?
+  - **Analysis**:
+    - "If Man City increased long passes by 20%, how much would success rate drop?"
+    - Marginal value of additional attempts
+    - Identify saturation points where more attempts hurt more than help
+  - **Deliverables**: Trade-off curves, marginal value plots, team comparisons
 
-**Wednesday Nov 12 (6-8h)**: 🎮 COUNTERFACTUAL POLICIES & FINALIZATION
-- Morning (4h): Counterfactual analysis
-  - "What should players do?" analysis: optimal action per zone
-  - Compare immediate shooting vs. pass sequences
-  - Counterfactual scenarios:
-    - +10-20% long forward passes in midfield
-    - -10% short lateral passes in attacking third
-    - +15% carries in defensive third
-  - Compute expected goals under altered policies
-  - Generate tactical recommendations with spatial heat maps
+- **Afternoon (4-6h)**: 🎬 FINAL POLISH & COMPLETION
+  - **Summary & conclusions**:
+    - Write executive summary at top of notebook
+    - Key findings section (3-5 main insights)
+    - Tactical recommendations for each team analyzed
+    - Limitations and future work
+    - References and acknowledgments
   
-- Afternoon (2-4h): Final touches & submission prep
-  - Visualization refinement (consistent colors, clear legends)
-  - Write-up: methodology, results, tactical insights, limitations
-  - Create summary figures for presentation
-  - Final code cleanup and documentation
-  - Prepare submission materials
-  - ✅ PROJECT READY FOR SUBMISSION (by 11:59 PM)
+  - **Final review and polish**:
+    - Re-run all notebook cells for clean output
+    - Verify all visualizations render correctly
+    - Check that all sections have clear narrative
+    - Proofread markdown cells for typos/clarity
+    - Ensure all code is documented
+  
+  - **Final checks**:
+    - ✅ All cells execute without errors
+    - ✅ All figures have clear titles and legends
+    - ✅ Research questions all answered
+    - ✅ Code is clean and documented
+    - ✅ Results are reproducible
+  
+  - **Evening**: ✅ **PROJECT COMPLETE AND READY FOR SUBMISSION!**
 
-### Estimated Total Hours Remaining: ~30-36 hours over 4 days = Tight but achievable!
+**Thursday Nov 13 (BUFFER DAY)**: Final review if needed, otherwise project is done!
+
+### Estimated Total Hours: ~30-36 hours over 3 days = Intense but achievable with focused work!
+  
+- **Final checks**:
+  - ✅ All cells execute without errors
+  - ✅ All figures have clear titles and legends
+  - ✅ Research questions all answered
+  - ✅ Code is clean and documented
+  - ✅ Results are reproducible
+  
+- **Submit by 11:59 PM**: Upload to course platform
+
+### Estimated Total Hours: ~22-28 hours over 4 days = Reasonable pace with buffer time!
+
+### Sections Completed ✅
+1. ✅ **Section 1-2**: Setup & Data Loading (Nov 1-2)
+2. ✅ **Section 3**: State-Action Space Definition (Nov 2)
+3. ✅ **Section 4**: MDP Construction (Nov 3-4)
+4. ✅ **Section 5**: Position-based xG Model (Nov 5)
+5. ✅ **Section 6**: Data Fixes & Validation (Nov 6-8)
+6. ✅ **Section 7**: Optimal Action Selection (Nov 9) ⭐ **TODAY'S ACHIEVEMENT!**
+   - Computed E[goals | s, a] for all state-action pairs
+   - Identified optimal action per state for Manchester City
+   - Created beautiful 3-team comparison visualization (City, Liverpool, Nottingham)
+   - Validated optimal actions respect physical constraints
+   - Fixed action label bug (forward/backward were swapped!)
+
+### Sections Remaining 🎯
+7. 🎯 **Section 9**: Counterfactual Policy Analysis (Nov 10) - PRIORITY #1
+8. 🔄 **Section 8**: Sequential Action Analysis (Nov 11) - PRIORITY #2
+9. 📊 **Section 10**: Quality-Quantity Trade-offs (Nov 12) - PRIORITY #3
+10. 🎬 **Section 11**: Summary & Submission (Nov 13)
 
 ### Key Deliverables
 1. **Jupyter Notebook**: Complete analysis pipeline with documented code
