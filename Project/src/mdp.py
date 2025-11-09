@@ -176,22 +176,31 @@ def build_transition_matrix(
         P[state, action_id, loss_state] = (n_failed + alpha) / (n_attempts + n_destinations * alpha)
     
     # 3. Apply action masking if provided
+    # Invalid actions should ALWAYS lead to possession loss
     if action_mask is not None:
         print("  Applying action availability mask...")
+        print("  Invalid (masked) actions will always transition to possession_loss")
         for state in range(n_states):
             for action_id in range(n_actions):
                 if not action_mask[state, action_id]:
-                    # Zero out this (state, action) - make it invalid
+                    # This action is INVALID in this state
+                    # Set all transitions to 0 except possession loss = 1.0
                     P[state, action_id, :] = 0.0
+                    P[state, action_id, loss_state] = 1.0
     
-    # 4. Normalize each (state, action) to sum to 1
+    # 4. Normalize each (state, action) to sum to 1 (only for valid actions)
     print("  Normalizing probabilities...")
     for state in range(n_states):
         for action_id in range(n_actions):
+            # Skip normalization if this is a masked (invalid) action
+            # It's already set to go directly to loss_state with probability 1.0
+            if action_mask is not None and not action_mask[state, action_id]:
+                continue  # Already handled above
+                
             row_sum = P[state, action_id, :].sum()
             if row_sum > 0:
                 P[state, action_id, :] /= row_sum
-            elif action_mask is None or action_mask[state, action_id]:
+            else:
                 # No data for this (state, action) but it's valid
                 # Assign small uniform probability (mostly to loss state)
                 P[state, action_id, loss_state] = 1.0

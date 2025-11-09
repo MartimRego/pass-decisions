@@ -366,7 +366,9 @@ def create_action_availability_mask(
     Constraints applied:
     - Shooting (action=6): only allowed within shoot_distance_threshold of goal
     - Backward passes (actions 0, 3): disabled in leftmost column (defensive edge)
+      AND disabled in defensive rows (0-1) - can't go further back
     - Forward passes (actions 2, 5): disabled in rightmost column (attacking edge)
+      AND long forward (5) disabled in attacking rows (5-6) - can't go further forward
     - Carries (action=7): always available
     - Lateral passes (actions 1, 4): always available
     """
@@ -389,14 +391,16 @@ def create_action_availability_mask(
         if x_center < shoot_x_threshold:
             mask[state, 6] = False  # Disable shooting
         
-        # Backward pass constraints: disable in leftmost column
-        if col == 0:
-            mask[state, 0] = False  # short_backward
+        # Long backward pass constraints: disable in defensive zone (columns 0-1)
+        # Reasoning: can't play long pass further backward if already in defensive zone
+        # Short backward passes allowed as they can stay in same state
+        if col <= 1:
             mask[state, 3] = False  # long_backward
         
-        # Forward pass constraints: disable in rightmost column
-        if col == grid.n_cols - 1:
-            mask[state, 2] = False  # short_forward
+        # Long forward pass constraints: disable in attacking zone (columns 9-10)
+        # Reasoning: can't play long ball forward if already near goal
+        # Short forward passes allowed as they can stay in same state
+        if col >= grid.n_cols - 2:
             mask[state, 5] = False  # long_forward
     
     return mask

@@ -157,7 +157,8 @@ def optimal_action_per_state(
     pi: np.ndarray,
     P: np.ndarray,
     R: np.ndarray,
-    n_actions: int
+    n_actions: int,
+    action_mask: np.ndarray = None
 ) -> np.ndarray:
     """
     Determine optimal action for each state.
@@ -174,6 +175,9 @@ def optimal_action_per_state(
         Reward vector
     n_actions : int
         Number of actions
+    action_mask : np.ndarray, optional
+        Boolean mask of shape (n_states, n_actions) indicating valid actions.
+        If provided, only considers valid actions when finding optimal.
         
     Returns
     -------
@@ -184,14 +188,19 @@ def optimal_action_per_state(
     -----
     For each state, computes E[goals | s, a] for all actions a,
     and selects the action with maximum expected goals.
+    Only considers valid actions according to action_mask if provided.
     """
     n_states = N.shape[0]
     optimal_actions = np.zeros(n_states, dtype=int)
     
     for s in range(n_states):
-        expected_goals_per_action = np.zeros(n_actions)
+        expected_goals_per_action = np.full(n_actions, -np.inf)  # Start with -inf for all
         
         for a in range(n_actions):
+            # Skip if this action is masked (invalid) for this state
+            if action_mask is not None and not action_mask[s, a]:
+                continue  # Leave as -inf, won't be selected
+            
             # Create modified policy that forces action a in state s
             pi_modified = pi.copy()
             pi_modified[s, :] = 0.0
