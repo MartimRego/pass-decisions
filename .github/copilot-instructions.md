@@ -722,8 +722,8 @@ During debugging on Nov 5-6, we discovered a fundamental misunderstanding of Ski
    - Fixed action label bug (forward/backward were swapped!)
 
 ### Sections Remaining 🎯
-7. 🎯 **Section 9**: Counterfactual Policy Analysis (Nov 10) - PRIORITY #1
-8. 🔄 **Section 8**: Sequential Action Analysis (Nov 11) - PRIORITY #2
+7. 🎯 **Section 8**: Counterfactual Policy Analysis (Nov 10) - PRIORITY #1
+8. 🔄 **Section 9**: Sequential Action Analysis (Nov 11) - PRIORITY #2
 9. 📊 **Section 10**: Quality-Quantity Trade-offs (Nov 12) - PRIORITY #3
 10. 🎬 **Section 11**: Summary & Submission (Nov 13)
 
