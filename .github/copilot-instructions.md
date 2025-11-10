@@ -621,12 +621,30 @@ During debugging on Nov 5-6, we discovered a fundamental misunderstanding of Ski
 
 **🚀 NEXT STEPS (Nov 10-12)** - Final Sprint to Finish Line:
 
-**Monday Nov 10 (8-10h)**: 🎯 SECTION 9 - COUNTERFACTUAL POLICY ANALYSIS (PRIORITY #1)
+**⚠️ CRITICAL ISSUE DISCOVERED (Nov 10)**: DataFrame confusion in notebook
+- **Problem**: The `actions` variable gets overwritten somewhere in the notebook and becomes a `list` instead of `pandas.DataFrame`
+- **Symptom**: `TypeError: list indices must be integers or slices, not str` when trying to access columns like `actions['team_id']`
+- **Affected cells**: Section 9 counterfactual analysis (all-teams loop)
+- **Root cause**: Unknown - needs investigation to find where `actions` is reassigned
+- **Workaround attempted**: Using `actions_raw` or `actions_clean` instead
+  - `actions_raw`: Has `first_player_possession_in_team_possession` but LACKS `state_from` column → KeyError
+  - `actions_clean`: Created with subset of columns, may or may not have needed columns
+- **What's needed**: 
+  1. Find where/why `actions` becomes a list
+  2. Determine which DataFrame actually has BOTH:
+     - `first_player_possession_in_team_possession` (for counting possessions)
+     - `state_from` (for state distribution)
+     - `team_id` (for filtering)
+  3. Use correct DataFrame name consistently throughout Section 9
+- **Status**: BLOCKING PROGRESS - must be resolved before counterfactual analysis can proceed
+
+**Monday Nov 10 (8-10h)**: 🎯 SECTION 9 - COUNTERFACTUAL POLICY ANALYSIS (PRIORITY #1) - ⚠️ BLOCKED
 - **"What if" scenarios**: Modify team policies and compute impact
   - "What if Manchester City shot 20% more often from edge of box?"
   - "What if Liverpool carried 15% less and passed forward instead?"
   - "What if Nottingham increased long forward passes by 20% in midfield?"
 - **Implementation**:
+  - ⚠️ FIRST: Fix DataFrame variable confusion (see CRITICAL ISSUE above)
   - Create modified policy matrices (π_modified) for each scenario
   - Recompute fundamental matrices under new policies
   - Calculate expected goals difference (E[goals_new] - E[goals_current])
@@ -714,7 +732,7 @@ During debugging on Nov 5-6, we discovered a fundamental misunderstanding of Ski
 3. ✅ **Section 4**: MDP Construction (Nov 3-4)
 4. ✅ **Section 5**: Position-based xG Model (Nov 5)
 5. ✅ **Section 6**: Data Fixes & Validation (Nov 6-8)
-6. ✅ **Section 7**: Optimal Action Selection (Nov 9) ⭐ **TODAY'S ACHIEVEMENT!**
+6. ✅ **Section 7**: Optimal Action Selection (Nov 9) ⭐ **MAJOR ACHIEVEMENT!**
    - Computed E[goals | s, a] for all state-action pairs
    - Identified optimal action per state for Manchester City
    - Created beautiful 3-team comparison visualization (City, Liverpool, Nottingham)
@@ -722,10 +740,41 @@ During debugging on Nov 5-6, we discovered a fundamental misunderstanding of Ski
    - Fixed action label bug (forward/backward were swapped!)
 
 ### Sections Remaining 🎯
-7. 🎯 **Section 8**: Counterfactual Policy Analysis (Nov 10) - PRIORITY #1
-8. 🔄 **Section 9**: Sequential Action Analysis (Nov 11) - PRIORITY #2
-9. 📊 **Section 10**: Quality-Quantity Trade-offs (Nov 12) - PRIORITY #3
+7. 🎯 **Section 9**: Counterfactual Policy Analysis (Nov 10) - PRIORITY 1 - ⚠️ BLOCKED
+   - **Blocking issue**: DataFrame variable confusion (`actions` becomes a list)
+   - **Needed**: Identify correct DataFrame with `team_id`, `first_player_possession_in_team_possession`, AND `state_from`
+   - **Goal**: Answer "What if teams changed their pass policies by 10-20%?"
+   
+8. 🔄 **Section 8**: Sequential Action Analysis (Nov 11) - PRIORITY 2
+   - **Goal**: Compare E[goals] for different action sequences (short build-up vs long balls)
+   
+9. 📊 **Section 10**: Quality-Quantity Trade-offs (Nov 12) - PRIORITY 3
+   - **Goal**: Model how success rates change when teams increase pass frequency
+
 10. 🎬 **Section 11**: Summary & Submission (Nov 13)
+
+### Work Summary (Nov 10 Evening)
+**What was attempted**:
+- Created counterfactual analysis cell for all 20 teams
+- Tried to filter `actions` DataFrame by `team_id` 
+- Encountered multiple DataFrame-related errors
+
+**Errors encountered**:
+1. `TypeError: list indices must be integers or slices, not str` → `actions` is a list, not DataFrame
+2. `KeyError: 'state_from'` → `actions_raw` lacks the state encoding column
+3. Confusion about which DataFrame has which columns
+
+**What needs to be done next session**:
+1. **Investigate the notebook cell-by-cell** to find where `actions` gets reassigned to a list
+2. **Check the kernel variables** to see what DataFrames actually exist:
+   - `actions` (currently a list - why?)
+   - `actions_raw` (has possession columns but no `state_from`)
+   - `actions_clean` (subset of columns - check if it has what we need)
+3. **Solution options**:
+   - Option A: Fix whatever is reassigning `actions` to a list
+   - Option B: Use the correct DataFrame name throughout Section 9
+   - Option C: Create a new properly-named DataFrame with all needed columns
+4. **Once fixed**: Complete the all-teams counterfactual loop and comparison tables
 
 ### Key Deliverables
 1. **Jupyter Notebook**: Complete analysis pipeline with documented code
