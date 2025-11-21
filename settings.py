@@ -1,1 +1,0 @@
-DATA_DIR = "'/Users/pegra441/Desktop/twelve-deep-learning/"
