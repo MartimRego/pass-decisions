@@ -38,3 +38,7 @@ deep_learning_readonly_key
 deep_learning_readonly_key.pub
 
 venv_graph/
+
+# local-only config / metadata
+.github/
+copilot-instructions.md
