@@ -181,9 +181,9 @@ This is a course project, but feel free to:
 
 ## 📧 Contact
 
-**Author**: [Your Name]  
+**Author**: Martim Rêgo
 **Course**: Deep Learning & AI in Sport  
-**Mentor**: [Mentor Name]
+**Mentor**: Pegah Rahimian
 
 ---
 
