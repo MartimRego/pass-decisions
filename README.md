@@ -34,16 +34,16 @@ Evaluates pass decision-making in soccer using Markov Decision Processes (MDPs),
 extending Van Roy et al.'s methodology from **shooting** to **passing**.
 
 **Key Features**
-- 9‑action space: short/medium/long × forward/lateral/backward + shoot
-- Full-field 22×17 grid (374 states)
+- 8‑action space: 6 pass types (short/long × forward/lateral/backward) + shoot + carry
+- 7×11 field grid (77 field states + 3 absorbing)
 - Quality–quantity trade-off modeling (Van Roy Method 3)
 - Counterfactual policy analysis and regret by state
 
 ## 📊 Data
 
 - **Source**: Premier League 2024 season event data (Twelve)
-- **Scope**: ~380 matches, ~570,000 passes
-- **Coverage**: ≈170 observations per state–action pair after filtering
+- **Scope**: Full Premier League 2024 season (~460k actions: passes, shots, carries)
+- **Coverage**: High state–action coverage suitable for MDP estimation
 
 ## 🚀 Quick Start
 
@@ -76,15 +76,23 @@ sa.visualize_grid(grid)
 ## 📦 Module Descriptions
 
 ### `data_processing.py`
-- Load Premier League event data
-- Filter and rescale coordinates
-- Classify passes into 9 categories
-- Export intermediate datasets to `data/`
+- Load Premier League event and metadata
+- Filter to passes/shots/carries and add success labels
+- Rescale and normalize coordinates
+- Classify passes into 6 types (short/long × fwd/lat/back)
 
 **Key Functions**
-- `load_premier_league_events()` – Load season data
-- `classify_pass_type()` – Categorize passes
-- `validate_pass_classifications()` – Quality checks
+- `load_premier_league_events()` – Load dynamic event data
+- `load_match_metadata()` – Load match/team metadata
+- `rescale_coordinates()` – Convert SkillCorner coords to meters
+- `normalize_attack_direction()` – Create *_norm coords
+- `extract_pass_events()` – Filter and clean passes
+- `extract_shot_events()` – Filter and clean shots
+- `extract_carry_events()` – Filter and clean carries
+- `combine_passes_shots_carries()` – Build unified action table
+- `classify_pass_type()` – Add pass_type / length / direction
+- `validate_pass_classifications()` – Sanity checks for types
+- `get_data_summary()` – High‑level dataset summary
 
 ### `state_action.py`
 - Define field grid discretization
@@ -94,7 +102,11 @@ sa.visualize_grid(grid)
 **Key Classes/Functions**
 - `FieldGrid` – Grid representation
 - `classify_action()` – Pass type → action ID
-- `ACTION_NAMES` – Action label dictionary
+- `add_state_action_encoding()` – Add state_from/state_to/action
+- `create_action_availability_mask()` – State–action mask
+- `get_available_actions()` – List valid actions per state
+- `visualize_grid()` – ASCII grid view
+- `ACTION_NAMES` / `ACTION_IDS` – Action label dictionaries
 
 ### `mdp.py`
 - Build transition matrix P(s, a, s')
@@ -105,7 +117,11 @@ sa.visualize_grid(grid)
 **Key Functions**
 - `build_transition_matrix()` – With Laplace smoothing
 - `build_policy_matrix()` – From observed frequencies
+- `build_reward_function()` – Goal/no‑goal reward vector
+- `build_team_mdps()` – Per‑team MDPs in batch
 - `validate_mdp()` – Probability constraints
+- `get_mdp_statistics()` – Sparsity/entropy/coverage summary
+- `save_team_mdps()` / `load_team_mdp()` – Disk I/O helpers
 
 ### `success_modeling.py`
 - Quality distribution analysis
@@ -128,6 +144,9 @@ sa.visualize_grid(grid)
 - `expected_goals_total()` – E[goals | policy]
 - `optimal_action_per_state()` – Best action per zone
 - `counterfactual_analysis()` – What‑if scenarios
+- `expected_goals_from_state()` – E[goals | single state]
+- `create_uniform_adjustment()` / `modify_policy()` – Policy tweaks
+- `compute_spatial_impact()` – Grid‑level goal impact
 
 ### `visualization.py`
 - Pitch plots with `mplsoccer`
@@ -139,20 +158,22 @@ sa.visualize_grid(grid)
 - `plot_optimal_actions_heatmap()` – Best action per cell
 - `plot_counterfactual_results()` – Scenario comparison
 - `plot_quality_quantity_tradeoff()` – Frequency vs. E[goals]
+- `plot_pass_distribution()` – Pass type/length distributions
+- `plot_grid_on_pitch()` – Visualize grid on pitch
+- `plot_expected_goals_heatmap()` – xG per zone
+- `plot_policy_comparison()` – Original vs modified π(a|s)
 
 ## 📝 Implementation Notes
 
 ### Design Decisions
-1. **Grid size**: 22×17 to balance resolution vs. data sparsity
-2. **Pass thresholds**: Short <15m, Medium 15–25m, Long >25m
+1. **Grid size**: 7×11 to balance resolution vs. data sparsity
+2. **Pass thresholds**: Short ≤25m, Long >25m
 3. **Smoothing**: Laplace α = 1 for transition probabilities
-4. **Quality metric**: Binary success/failure (can be extended to xT)
 
 ### Validation Checks
 - All probability distributions sum to 1
 - No NaN or Inf values
 - Reasonable success rates (short ≫ long)
-- Expected goals under the model ≈ actual goals (within 10–15%)
 
 ## 🎓 References
 
@@ -161,9 +182,6 @@ Van Roy, M., Robberechts, P., Yang, W. C., De Raedt, L., & Davis, J. (2020).
 *Leaving Goals on the Pitch: Evaluating Decision Making in Soccer*. MIT Sloan
 Sports Analytics Conference.
 
-**Course Materials**
-- Module 4: Possession Values (xT, VAEP)
-- Module 2: Clustering & Visualization
 
 ## 🤝 Contributing
 
