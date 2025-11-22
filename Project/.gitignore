@@ -34,6 +34,7 @@ data/*.json
 *.parquet
 *.csv
 !data/README.md
+!data/xg_model.pkl  # Allow trained xG model
 
 # Output files
 outputs/*.png

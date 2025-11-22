@@ -59,13 +59,22 @@ pip install -r ../requirements.txt
 python -c "from src import data_processing; print('✓ Imports working')"
 ```
 
-### 2. Run Main Notebook
+### 2. Train xG Model (Required Before MDP Construction)
+
+```bash
+# Train the logistic regression xG model on shot data
+python train_xg_model.py
+```
+
+This creates `data/xg_model.pkl` which is used as the Bayesian prior for shot success probabilities.
+
+### 3. Run Main Notebook
 
 ```bash
 jupyter notebook pass_decision_analysis.ipynb
 ```
 
-### 3. Quick Module Check
+### 4. Quick Module Check
 
 ```python
 from src import state_action as sa
@@ -93,6 +102,28 @@ sa.visualize_grid(grid)
 - `classify_pass_type()` – Add pass_type / length / direction
 - `validate_pass_classifications()` – Sanity checks for types
 - `get_data_summary()` – High‑level dataset summary
+
+### `xg_model.py`
+- **NEW**: Trained logistic regression xG model (replaces hand-crafted geometric model)
+- Calculate viewing angle to goal
+- Train and save xG model using shot data
+- Provide Bayesian prior for shot success probabilities
+
+**Key Functions**
+- `calculate_goal_angle()` – Compute viewing angle from position
+- `build_shot_dataset()` – Prepare shot data for training
+- `train_logistic_xg_model()` – Train logistic regression on angle-to-goal
+- `save_xg_model()` / `load_xg_model()` – Model persistence
+- `predict_xg()` – Get xG prediction for a given angle
+- `apply_bayesian_shrinkage()` – Apply Bayesian smoothing using trained prior
+- `geometric_xg_model()` – DEPRECATED: Old hand-crafted model (fallback only)
+
+**Model Details**
+- Feature: Viewing angle to goal (degrees)
+- Model: Logistic regression (scikit-learn)
+- Training: ~8,700 shots from Premier League 2024
+- Performance: ROC-AUC ~0.70
+- Usage: Bayesian prior with α=10 pseudo-observations
 
 ### `state_action.py`
 - Define field grid discretization
