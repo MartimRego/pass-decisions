@@ -67,9 +67,9 @@ def main():
             actions['player_targeted_x_reception_norm'] = actions['player_targeted_x_reception_rescaled']
             actions['player_targeted_y_reception_norm'] = actions['player_targeted_y_reception_rescaled']
     
-    # 3. Create field grid (7×11)
+    # 3. Create field grid (22×34 high-resolution)
     print("\n3. Creating field grid...")
-    grid = sa.FieldGrid(n_rows=7, n_cols=11)
+    grid = sa.FieldGrid(n_rows=22, n_cols=34)
     print(f"✅ Grid: {grid.n_rows}×{grid.n_cols} = {grid.n_states} states")
     print(f"   Cell size: {grid.cell_width:.2f}m × {grid.cell_height:.2f}m")
     
@@ -108,7 +108,7 @@ def main():
     print(f"{'='*80}")
     print(f"💾 Saved: {output_path}")
     print(f"📊 Size: {len(actions):,} actions")
-    print(f"🎯 Grid: {grid.n_rows}×{grid.n_cols} = {grid.n_states} states")
+    print(f"🎯 Grid: {grid.n_rows}×{grid.n_cols} = {grid.n_states} states (high resolution)")
     print(f"🎬 Actions: {actions['action'].nunique()} (shoot=6, carry=7)")
     print(f"\n✅ Ready for MDP construction!")
     print(f"{'='*80}")

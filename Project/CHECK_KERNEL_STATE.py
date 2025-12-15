@@ -1,0 +1,12 @@
+# This script helps diagnose what's in the notebook kernel memory
+print("="*70)
+print("CRITICAL: Kernel State Check")
+print("="*70)
+print("\nThe notebook kernel currently has OLD MDPs in memory!")
+print("\nVariables P_city, pi_city, R_city, N_city exist from BEFORE the regeneration.")
+print("These are cached from when the cells were executed with the old 7×11 MDPs.")
+print("\nTo fix:")
+print("1. Click 'Restart' button in VS Code notebook toolbar")
+print("2. Re-run from Section 4.2 (Load Team MDPs) onwards")
+print("\nAfter restart, P_city will load as shape (751,8,751) instead of (80,8,80)")
+print("="*70)

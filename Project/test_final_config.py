@@ -28,7 +28,7 @@ def main():
     
     # Test grid
     print("\n2. FIELD GRID")
-    grid = FieldGrid(n_rows=34, n_cols=22)
+    grid = FieldGrid(n_rows=22, n_cols=34)
     print(f"   Dimensions: {grid.n_rows} rows × {grid.n_cols} cols")
     print(f"   Total states: {grid.n_states}")
     print(f"   Cell size: {grid.cell_width:.2f}m × {grid.cell_height:.2f}m")
@@ -61,7 +61,7 @@ def main():
     print(f"CONFIGURATION SUMMARY")
     print(f"{'='*60}")
     print(f"Grid: {grid.n_rows}×{grid.n_cols} = {grid.n_states} states")
-    print(f"Actions: {len(ACTION_NAMES)} (8 pass types + shoot)")
+    print(f"Actions: {len(ACTION_NAMES)} (6 pass types + shoot + carry)")
     print(f"Passes: {len(passes):,}")
     print(f"Success rate: {passes['success'].mean()*100:.2f}%")
     print(f"State-action pairs: {grid.n_states} × {len(ACTION_NAMES)} = {grid.n_states * len(ACTION_NAMES)}")

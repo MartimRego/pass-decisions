@@ -33,7 +33,7 @@ ACTION_NAMES = {
 ACTION_IDS = {v: k for k, v in ACTION_NAMES.items()}
 
 # Absorbing state indices (added after field states)
-# With 7×11 grid = 77 field states, absorbing states are 77, 78, 79
+# With 22×34 grid = 748 field states, absorbing states are 748, 749, 750
 ABSORBING_STATES = {
     'goal': lambda n_field_states: n_field_states,  # Successful shot
     'no_goal': lambda n_field_states: n_field_states + 1,  # Failed shot
@@ -68,8 +68,8 @@ class FieldGrid:
     
     def __init__(
         self,
-        n_rows: int = 7,
-        n_cols: int = 11,
+        n_rows: int = 22,
+        n_cols: int = 34,
         pitch_length: float = 105,
         pitch_width: float = 68
     ):
@@ -261,7 +261,7 @@ def add_state_action_encoding(
     df = df.copy()
     
     # Get absorbing state indices
-    n_field_states = grid.n_states  # 77 for 7×11 grid
+    n_field_states = grid.n_states  # Dynamic for current grid (e.g., 748 for 22×34)
     goal_state = ABSORBING_STATES['goal'](n_field_states)  # 77
     no_goal_state = ABSORBING_STATES['no_goal'](n_field_states)  # 78
     loss_possession_state = ABSORBING_STATES['loss_possession'](n_field_states)  # 79
@@ -434,20 +434,13 @@ def visualize_grid(grid: FieldGrid) -> None:
 
 
 if __name__ == "__main__":
-    # Example usage
-    print("State-Action Space Module - Skeleton Created")
-    
-    # Test grid
-    grid = FieldGrid(n_rows=17, n_cols=22)
+    print("State-Action Space Module - Grid Demo")
+    grid = FieldGrid()  # Defaults to 22×34
     visualize_grid(grid)
-    
-    # Test coordinate conversion
-    x, y = 52.5, 34.0  # Center of pitch
+    x, y = 52.5, 34.0
     state = grid.xy_to_state(x, y)
     x_back, y_back = grid.state_to_xy(state)
-    print(f"Test: ({x}, {y}) -> state {state} -> ({x_back:.2f}, {y_back:.2f})")
-    
-    # Test action classification
-    print(f"\nAction IDs:")
+    print(f"Coordinate round-trip: ({x:.2f}, {y:.2f}) -> state {state} -> ({x_back:.2f}, {y_back:.2f})")
+    print("Action IDs:")
     for aid, aname in ACTION_NAMES.items():
         print(f"  {aid}: {aname}")

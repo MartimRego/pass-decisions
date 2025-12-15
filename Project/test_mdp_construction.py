@@ -48,39 +48,39 @@ def main():
     # Build transition matrix
     P = mdp.build_transition_matrix(
         actions=actions,
-        n_states=748,
-        n_actions=10,
+        n_states=grid.n_states,
+        n_actions=8,
         alpha=2.0,
         team_id=test_team_id,
         action_mask=action_mask
     )
     
     print(f"\nTransition matrix P shape: {P.shape}")
-    print(f"Expected: (751, 10, 751)")
+    print(f"Expected: ({grid.n_states+3}, 8, {grid.n_states+3})")
     
     # Build policy matrix
     pi = mdp.build_policy_matrix(
         actions=actions,
-        n_states=748,
-        n_actions=10,
+        n_states=grid.n_states,
+        n_actions=8,
         team_id=test_team_id,
         action_mask=action_mask
     )
     
     print(f"Policy matrix π shape: {pi.shape}")
-    print(f"Expected: (748, 10)")
+    print(f"Expected: ({grid.n_states}, 8)")
     
     # Build reward function
-    R = mdp.build_reward_function(n_states=748)
+    R = mdp.build_reward_function(n_states=grid.n_states)
     print(f"Reward vector R shape: {R.shape}")
-    print(f"Expected: (751,)")
-    print(f"Goal state reward (R[748]): {R[748]}")
+    print(f"Expected: ({grid.n_states+3},)")
+    print(f"Goal state reward (R[{grid.n_states}]): {R[grid.n_states]}")
     
     # Validate MDP
     print("\n4. Validating MDP...")
     print("-"*70)
     try:
-        mdp.validate_mdp(P[:748, :, :], pi)
+        mdp.validate_mdp(P[:grid.n_states, :, :], pi)
         print("✅ MDP validation passed!")
     except AssertionError as e:
         print(f"❌ Validation failed: {e}")
@@ -107,8 +107,8 @@ def main():
     
     mdps = mdp.build_team_mdps(
         actions=actions,
-        n_states=748,
-        n_actions=10,
+        n_states=grid.n_states,
+        n_actions=8,
         alpha=2.0,
         action_mask=action_mask,
         team_ids=top_teams

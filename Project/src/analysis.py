@@ -45,18 +45,21 @@ def compute_fundamental_matrix(
     """
     # Number of transient (field) states
     n_transient = pi.shape[0]
-    
-    # Build Q matrix: transitions between field states only
-    Q = np.zeros((n_transient, n_transient))
-    for s in range(n_transient):
-        for a in range(P.shape[1]):
-            for s_prime in range(n_transient):  # Only transient states
-                Q[s, s_prime] += P[s, a, s_prime] * pi[s, a]
-    
-    # Compute fundamental matrix
+
+    # Efficient vectorized construction of Q:
+    # P has shape (n_states_total, n_actions, n_states_total).
+    # We only need transient->transient block: P[:n_transient, :, :n_transient]
+    # Q[s, s'] = sum_a P[s, a, s'] * pi[s, a]
+    P_block = P[:n_transient, :, :n_transient]  # shape (n_transient, n_actions, n_transient)
+
+    # Multiply by policy probabilities and sum over actions (axis=1)
+    # Broadcasting: pi[:, :, None] has shape (n_transient, n_actions, 1)
+    Q = (P_block * pi[:, :, None]).sum(axis=1)
+
+    # Compute fundamental matrix N = (I - Q)^{-1}
     I = np.eye(n_transient)
     N = inv(I - Q)
-    
+
     return N
 
 
@@ -78,31 +81,21 @@ def expected_goals_from_state(state, N, pi, P, R):
     Returns:
         Expected number of goals starting from the given state
     """
+    # Vectorized computation for expected goals from a given start state.
+    # Precompute per-state probability of scoring from that state under policy:
+    # score_prob[s'] = sum_a pi[s', a] * P[s', a, goal_state]
     n_transient = N.shape[0]
-    n_actions = pi.shape[1]
-    
-    # Find the goal state (where R=1)
     goal_state = np.where(R == 1)[0][0]
-    
-    # Expected goals = sum over all states s' we'll visit of:
-    #   (expected visits to s') * (probability of shooting from s') * (probability shoot leads to goal)
-    expected_goals = 0.0
-    
-    for s_prime in range(n_transient):
-        # Expected number of times we visit state s' starting from state
-        visits = N[state, s_prime]
-        
-        # Sum over all actions from s' that could lead to goal
-        for action in range(n_actions):
-            # Probability of taking this action in state s'
-            action_prob = pi[s_prime, action]
-            
-            # Probability this action leads to goal state
-            goal_prob = P[s_prime, action, goal_state]
-            
-            # Accumulate: visits * action_prob * goal_prob
-            expected_goals += visits * action_prob * goal_prob
-    
+
+    # P_block for goal probabilities: shape (n_transient, n_actions)
+    goal_probs = P[:n_transient, :, goal_state]
+
+    # Per-state scoring probability under policy
+    score_prob = (pi * goal_probs).sum(axis=1)  # shape (n_transient,)
+
+    # Expected goals from 'state' is dot product of N[state, :] and score_prob
+    expected_goals = float(np.dot(N[state, :], score_prob))
+
     return expected_goals
 def expected_goals_total(
     N: np.ndarray,
@@ -136,19 +129,39 @@ def expected_goals_total(
         total expected goals for a season.
     """
     n_transient = N.shape[0]
-    
-    expected_goals_per_possession = 0.0
-    
-    for state in range(n_transient):
-        # Weight by how often possessions start in this state
-        start_prob = possession_starts[state]
-        
-        # Calculate expected goals from this state
-        eg_from_state = expected_goals_from_state(state, N, pi, P, R)
-        
-        # Accumulate weighted sum
-        expected_goals_per_possession += start_prob * eg_from_state
-    
+
+    # Defensive check: possession_starts must have length equal to number of
+    # transient (field) states. A common error is creating possession_starts
+    # using the old grid constant (e.g. 77) instead of deriving it from the
+    # MDP / fundamental matrix. Provide a helpful error message if mismatch.
+    if possession_starts.shape[0] != n_transient:
+        raise ValueError(
+            f"possession_starts length ({possession_starts.shape[0]}) != "
+            f"expected n_transient ({n_transient}).\n"
+            "This usually means `possession_starts` was created with the old "
+            "grid size (77) instead of using the current MDP shape.\n"
+            "Fix: recreate possession_starts to match the MDP transient state "
+            "count, e.g.:\n"
+            "  n_total = P.shape[0]\n"
+            "  n_transient = n_total - 3\n"
+            "  possession_starts = np.ones(n_transient) / n_transient\n"
+            "Or compute an empirical distribution from actions (bincount over "
+            "state indices)."
+        )
+
+    # Vectorized: compute per-state expected goals once, then weight by possession_starts
+    goal_state = np.where(R == 1)[0][0]
+
+    # Per-state scoring probability under policy (shape: n_transient,)
+    goal_probs = P[:n_transient, :, goal_state]
+    score_prob = (pi * goal_probs).sum(axis=1)
+
+    # Expected goals from each starting state: eg_state = N @ score_prob
+    eg_per_state = N.dot(score_prob)
+
+    # Weighted by possession start distribution
+    expected_goals_per_possession = float(np.dot(possession_starts, eg_per_state))
+
     return expected_goals_per_possession
 
 
@@ -192,29 +205,135 @@ def optimal_action_per_state(
     """
     n_states = N.shape[0]
     optimal_actions = np.zeros(n_states, dtype=int)
-    
+
+    # Precompute quantities reused across (state,action) computations
+    # Transient block of P: shape (n_states, n_actions, n_states)
+    P_block = P[:n_states, :, :n_states]
+
+    # Original Q and score probability under original policy
+    Q = (P_block * pi[:, :, None]).sum(axis=1)  # shape (n_states, n_states)
+    goal_state = np.where(R == 1)[0][0]
+    goal_probs = P[:n_states, :, goal_state]  # shape (n_states, n_actions)
+    score_prob_orig = (pi * goal_probs).sum(axis=1)  # shape (n_states,)
+
+    # Precompute N @ score_prob_orig for use in Sherman-Morrison formulas
+    w_orig = N.dot(score_prob_orig)  # shape (n_states,)
+
+    best_eg_arr = np.full(n_states, -np.inf)
+
     for s in range(n_states):
-        expected_goals_per_action = np.full(n_actions, -np.inf)  # Start with -inf for all
-        
+        Ns_s = N[s, s]
+        Ns_col = N[:, s]  # column s of N
+
+        # Base expected goals from state s under original policy
+        base_eg = float(np.dot(N[s, :], score_prob_orig))
+
+        best_action = -1
+        best_eg = -np.inf
+
         for a in range(n_actions):
-            # Skip if this action is masked (invalid) for this state
             if action_mask is not None and not action_mask[s, a]:
-                continue  # Leave as -inf, won't be selected
-            
-            # Create modified policy that forces action a in state s
-            pi_modified = pi.copy()
-            pi_modified[s, :] = 0.0
-            pi_modified[s, a] = 1.0
-            
-            # Recompute fundamental matrix with modified policy
-            N_modified = compute_fundamental_matrix(P, pi_modified)
-            
-            # Calculate expected goals from state s with this action forced
-            expected_goals_per_action[a] = expected_goals_from_state(s, N_modified, pi_modified, P, R)
-        
-        optimal_actions[s] = np.argmax(expected_goals_per_action)
-    
-    return optimal_actions
+                continue
+
+            # New row for Q when forcing action a at state s
+            new_row = P_block[s, a, :]
+            v = new_row - Q[s, :]
+
+            # Sherman-Morrison components
+            vTNs = float(v.dot(Ns_col))
+            denom = 1.0 - vTNs
+            if abs(denom) < 1e-12:
+                denom = np.sign(denom) * 1e-12 if denom != 0 else 1e-12
+
+            vTworig = float(v.dot(w_orig))
+
+            # Change in per-state scoring probability at s due to forcing action a
+            delta_score_s = float(goal_probs[s, a] - score_prob_orig[s])
+
+            # Expected goals with rank-1 update (derived from Sherman-Morrison)
+            eg = base_eg + (Ns_s / denom) * vTworig + (Ns_s / denom) * delta_score_s
+
+            if eg > best_eg:
+                best_eg = eg
+                best_action = a
+
+        optimal_actions[s] = best_action if best_action is not None else -1
+        best_eg_arr[s] = best_eg
+
+    return optimal_actions, best_eg_arr
+
+
+def eg_per_state_action_matrix(
+    N: np.ndarray,
+    pi: np.ndarray,
+    P: np.ndarray,
+    R: np.ndarray,
+    n_actions: int,
+    action_mask: np.ndarray = None
+) -> np.ndarray:
+    """
+    Compute E[goals | state, action] for every (state, action) pair efficiently.
+
+    Uses the same Sherman-Morrison based algebra as `optimal_action_per_state`
+    but returns the full matrix of expected goals for all valid actions.
+
+    Parameters
+    ----------
+    N : np.ndarray
+        Fundamental matrix (n_states x n_states)
+    pi : np.ndarray
+        Original policy (n_states x n_actions)
+    P : np.ndarray
+        Transition tensor (n_states_total x n_actions x n_states_total)
+    R : np.ndarray
+        Reward vector
+    n_actions : int
+        Number of actions
+    action_mask : np.ndarray, optional
+        Boolean mask of valid actions (n_states x n_actions)
+
+    Returns
+    -------
+    np.ndarray
+        Matrix of shape (n_states, n_actions) with expected goals for
+        each state-action. Invalid actions are filled with -1.0.
+    """
+    n_states = N.shape[0]
+
+    # Prepare transient block and quantities reused
+    P_block = P[:n_states, :, :n_states]
+    Q = (P_block * pi[:, :, None]).sum(axis=1)
+    goal_state = np.where(R == 1)[0][0]
+    goal_probs = P[:n_states, :, goal_state]  # shape (n_states, n_actions)
+    score_prob_orig = (pi * goal_probs).sum(axis=1)
+    w_orig = N.dot(score_prob_orig)
+
+    eg_mat = np.full((n_states, n_actions), -1.0, dtype=float)
+
+    for s in range(n_states):
+        Ns_s = N[s, s]
+        Ns_col = N[:, s]
+        base_eg = float(np.dot(N[s, :], score_prob_orig))
+
+        for a in range(n_actions):
+            if action_mask is not None and not action_mask[s, a]:
+                continue
+
+            new_row = P_block[s, a, :]
+            v = new_row - Q[s, :]
+
+            vTNs = float(v.dot(Ns_col))
+            denom = 1.0 - vTNs
+            if abs(denom) < 1e-12:
+                denom = 1e-12
+
+            vTworig = float(v.dot(w_orig))
+            delta_score_s = float(goal_probs[s, a] - score_prob_orig[s])
+
+            eg = base_eg + (Ns_s / denom) * vTworig + (Ns_s / denom) * delta_score_s
+            eg_mat[s, a] = eg
+
+    return eg_mat
 
 
 def create_uniform_adjustment(
@@ -239,16 +358,23 @@ def create_uniform_adjustment(
     states : list of int, optional
         Specific states to apply change to. If None, uses col_range.
     col_range : tuple of int, optional
-        (min_col, max_col) to restrict modification (e.g., (5, 8) for columns 6-9)
-    action_mask : np.ndarray, optional
-        Action availability mask. Won't modify invalid actions.
-        
-    Returns
-    -------
-    dict
-        Modifications dictionary {(state, action): change_pct}
-        
-    Examples
+                # Vectorized per-state impact computation
+                n_transient = N_original.shape[0]
+
+                # Score probability per state under original and modified policies
+                goal_state = np.where(R == 1)[0][0]
+                goal_probs_orig = P[:n_transient, :, goal_state]
+                score_prob_orig = (pi_original * goal_probs_orig).sum(axis=1)
+
+                goal_probs_mod = P[:n_transient, :, goal_state]
+                score_prob_mod = (pi_modified * goal_probs_mod).sum(axis=1)
+
+                # Expected goals per state under each policy
+                eg_per_state_orig = N_original.dot(score_prob_orig)
+                eg_per_state_mod = N_modified.dot(score_prob_mod)
+
+                # Difference weighted by possession starts
+                goal_diff_per_state = (eg_per_state_mod - eg_per_state_orig) * possession_starts[:n_transient]
     --------
     >>> # Increase both long passes by 20% in midfield (columns 6-9)
     >>> mods = create_uniform_adjustment(
