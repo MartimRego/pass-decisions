@@ -739,10 +739,252 @@ def classify_pass_direction(
     return direction
 
 
+def add_opponent_regain_proxy(
+    events: pd.DataFrame,
+    *,
+    max_gap_frames: int = 50,
+    group_cols: Tuple[str, ...] = ('match_id', 'period'),
+    sort_cols: Tuple[str, ...] = ('frame_start', 'frame_end'),
+    event_type_col: str = 'event_type',
+    restrict_event_type: str = 'player_possession',
+    team_col: str = 'team_id',
+    attacking_side_col: str = 'attacking_side',
+    frame_start_col: str = 'frame_start',
+    frame_end_col: str = 'frame_end',
+    x_start_col: str = 'x_start',
+    y_start_col: str = 'y_start',
+    x_end_col: str = 'x_end',
+    y_end_col: str = 'y_end',
+) -> pd.DataFrame:
+    """Add opponent-regain proxy features used for unsuccessful-pass direction override.
+
+        The regain proxy is defined using the *next* player-possession action within the same
+        (match_id, period), ordered by time:
+    - team_switch_next: next_team_id != team_id
+        - opp_regain_x/y: proxy location of the opponent's next possession start, expressed in
+            the SAME coordinate frame as the current row (see note below).
+    - opp_regain_gap_frames: next_row.frame_start - this_row.frame_end
+
+    We also provide model-ready features with 100% availability via conservative filling:
+    - has_opp_regain_within_gap (bool)
+    - dx_to_regain, dy_to_regain, dist_to_regain, angle_to_regain
+
+    Notes
+    -----
+    - This function does *not* change the pass-type schema.
+    - Offside is already treated as unsuccessful elsewhere via success==0.
+    - Coordinates/frames must exist in the input (column names configurable).
+        - SkillCorner Dynamic Events coordinates are normalized so that the team in possession
+            attacks left→right. That implies when possession switches teams, the coordinate frame
+            typically rotates 180° (both x and y). If `attacking_side` is available, we undo/redo
+            this rotation so that `opp_regain_x/y` are comparable to the current row's x/y.
+    """
+    if max_gap_frames < 0:
+        raise ValueError(f"max_gap_frames must be >= 0, got {max_gap_frames}")
+
+    events_out = events.copy()
+
+    required_cols = set(group_cols) | {
+        team_col,
+        frame_start_col,
+        frame_end_col,
+        x_start_col,
+        y_start_col,
+        x_end_col,
+        y_end_col,
+    }
+    missing = [c for c in required_cols if c not in events_out.columns]
+    if missing:
+        raise ValueError(
+            "add_opponent_regain_proxy: missing required columns: "
+            f"{missing}. Available columns: {sorted(events_out.columns.tolist())}"
+        )
+
+    # Initialize columns to ensure they always exist
+    init_cols = {
+        'team_switch_next': False,
+        'opp_regain_x': np.nan,
+        'opp_regain_y': np.nan,
+        'opp_regain_gap_frames': float(max_gap_frames + 1),
+        'has_opp_regain_within_gap': False,
+        'dx_to_regain': 0.0,
+        'dy_to_regain': 0.0,
+        'dist_to_regain': 0.0,
+        'angle_to_regain': 0.0,
+    }
+    for col, default in init_cols.items():
+        if col not in events_out.columns:
+            events_out[col] = default
+        else:
+            # Keep existing values if present; we'll overwrite for relevant rows below
+            pass
+
+    # Restrict to possession actions (default: player_possession)
+    if event_type_col in events_out.columns:
+        mask = events_out[event_type_col] == restrict_event_type
+    else:
+        mask = pd.Series(True, index=events_out.index)
+
+    action_cols = list(required_cols)
+    if attacking_side_col in events_out.columns and attacking_side_col not in action_cols:
+        action_cols.append(attacking_side_col)
+
+    actions = events_out.loc[mask, action_cols].copy()
+    actions['_orig_index'] = actions.index
+
+    # Sort within (match_id, period)
+    sort_by = list(group_cols)
+    for c in sort_cols:
+        if c in actions.columns and c not in sort_by:
+            sort_by.append(c)
+    if sort_by == list(group_cols):
+        # Fall back to frame_start/frame_end if custom sort_cols missing
+        sort_by = list(group_cols) + [frame_start_col, frame_end_col]
+
+    actions = actions.sort_values(sort_by, kind='mergesort')
+
+    # Next-action fields
+    next_team = actions.groupby(list(group_cols), sort=False)[team_col].shift(-1)
+    next_x_start = actions.groupby(list(group_cols), sort=False)[x_start_col].shift(-1)
+    next_y_start = actions.groupby(list(group_cols), sort=False)[y_start_col].shift(-1)
+    next_frame_start = actions.groupby(list(group_cols), sort=False)[frame_start_col].shift(-1)
+    next_attacking_side = (
+        actions.groupby(list(group_cols), sort=False)[attacking_side_col].shift(-1)
+        if attacking_side_col in actions.columns
+        else None
+    )
+
+    team_switch_next = (next_team.notna()) & (next_team != actions[team_col])
+    gap = next_frame_start - actions[frame_end_col]
+
+    # Proxy regain location (only when team switches)
+    #
+    # SkillCorner coordinates are normalized to the in-possession team's attack direction.
+    # When possession switches teams, the raw delivered coordinates typically rotate 180°.
+    # If we have attacking_side for both current and next actions, align the next action's
+    # coordinates into the current action's frame before computing deltas.
+    opp_x_raw = next_x_start.where(team_switch_next)
+    opp_y_raw = next_y_start.where(team_switch_next)
+
+    if attacking_side_col in actions.columns and next_attacking_side is not None:
+        curr_side = actions[attacking_side_col].astype(str)
+        next_side = next_attacking_side.astype(str)
+        needs_rotate = team_switch_next & curr_side.notna() & next_side.notna() & (curr_side != next_side)
+
+        opp_x = opp_x_raw.where(~needs_rotate, PITCH_LENGTH - opp_x_raw)
+        opp_y = opp_y_raw.where(~needs_rotate, PITCH_WIDTH - opp_y_raw)
+    else:
+        opp_x = opp_x_raw
+        opp_y = opp_y_raw
+
+    gap_when_switch = gap.where(team_switch_next)
+
+    has_within_gap = (
+        team_switch_next
+        & gap_when_switch.notna()
+        & (gap_when_switch <= max_gap_frames)
+        & opp_x.notna()
+        & opp_y.notna()
+    )
+
+    # Model features (filled for 100% availability)
+    gap_filled = gap_when_switch.fillna(float(max_gap_frames + 1))
+    dx = (opp_x - actions[x_end_col]).where(opp_x.notna() & actions[x_end_col].notna(), 0.0)
+    dy = (opp_y - actions[y_end_col]).where(opp_y.notna() & actions[y_end_col].notna(), 0.0)
+    dist = np.sqrt(dx**2 + dy**2)
+    angle = np.arctan2(dy, dx)  # radians
+
+    # Write back to the original rows
+    idx = actions['_orig_index']
+    events_out.loc[idx, 'team_switch_next'] = team_switch_next.values
+    events_out.loc[idx, 'opp_regain_x'] = opp_x.values
+    events_out.loc[idx, 'opp_regain_y'] = opp_y.values
+    events_out.loc[idx, 'opp_regain_gap_frames'] = gap_filled.values
+    events_out.loc[idx, 'has_opp_regain_within_gap'] = has_within_gap.values
+    events_out.loc[idx, 'dx_to_regain'] = dx.values
+    events_out.loc[idx, 'dy_to_regain'] = dy.values
+    events_out.loc[idx, 'dist_to_regain'] = dist.values
+    events_out.loc[idx, 'angle_to_regain'] = angle.values
+
+    return events_out
+
+
+def override_predicted_pass_direction_only(
+    passes: pd.DataFrame,
+    *,
+    predicted_type_col: str,
+    output_col: str = 'predicted_pass_type_tuned_dir_override',
+    max_gap_frames: int = 50,
+    success_col: str = 'success',
+    team_switch_col: str = 'team_switch_next',
+    gap_col: str = 'opp_regain_gap_frames',
+    x_end_col: str = 'x_end',
+    y_end_col: str = 'y_end',
+    opp_x_col: str = 'opp_regain_x',
+    opp_y_col: str = 'opp_regain_y',
+) -> pd.DataFrame:
+    """Override only the direction component of a predicted pass-type label.
+
+    Applies override when all conditions hold:
+    - success == 0
+    - team_switch_next == True
+    - opp_regain_gap_frames <= max_gap_frames
+    - required coordinates present
+
+    Length is preserved from the predicted label (e.g., 'short_*' or 'long_*').
+    """
+    if predicted_type_col not in passes.columns:
+        raise ValueError(f"Missing column {predicted_type_col!r} in passes")
+
+    needed = [success_col, team_switch_col, gap_col, x_end_col, y_end_col, opp_x_col, opp_y_col]
+    missing = [c for c in needed if c not in passes.columns]
+    if missing:
+        raise ValueError(
+            "override_predicted_pass_direction_only: missing required columns: "
+            f"{missing}. Available columns: {sorted(passes.columns.tolist())}"
+        )
+
+    out = passes.copy()
+
+    # Start with the base predicted label
+    base = out[predicted_type_col].astype('object')
+    out[output_col] = base
+
+    # Eligibility mask
+    eligible = (
+        (out[success_col] == 0)
+        & (out[team_switch_col].astype(bool))
+        & (out[gap_col].notna())
+        & (out[gap_col] <= max_gap_frames)
+        & out[[x_end_col, y_end_col, opp_x_col, opp_y_col]].notna().all(axis=1)
+    )
+
+    # Parse predicted length (keep), recompute direction
+    # Expected format: "{length}_{direction}" e.g. "short_forward"
+    lengths = base.str.split('_', n=1, expand=True)
+    if lengths.shape[1] != 2:
+        raise ValueError(
+            f"Predicted labels in {predicted_type_col!r} are not in 'length_direction' format"
+        )
+    length_part = lengths[0]
+
+    dx = out[opp_x_col] - out[x_end_col]
+    dy = out[opp_y_col] - out[y_end_col]
+    new_dir = classify_pass_direction(dx, dy)
+
+    out.loc[eligible, output_col] = (length_part.loc[eligible].astype(str) + '_' + new_dir.loc[eligible].astype(str)).values
+    out['direction_override_applied'] = False
+    out.loc[eligible, 'direction_override_applied'] = True
+
+    return out
+
+
 def classify_pass_type(
     passes: pd.DataFrame,
     use_predicted_types: bool = True,
-    predicted_types_path: str = '../PremierLeague_data/2024/processed/passes_with_types_complete.parquet'
+    predicted_types_path: str = '../PremierLeague_data/2024/processed/passes_with_types_complete.parquet',
+    apply_unsuccessful_direction_override: bool = True,
+    max_gap_frames: int = 50,
 ) -> pd.DataFrame:
     """
     Add pass type classification (6 categories) to pass events.
@@ -784,6 +1026,12 @@ def classify_pass_type(
     
     Unsuccessful passes get their pass_type from a pre-trained XGBoost model
     that predicts the intended pass type based on game context features.
+
+    If apply_unsuccessful_direction_override=True, we additionally apply a conservative
+    direction-only override for unsuccessful passes using an opponent-regain proxy:
+    - length (short/long) is preserved from the predicted label
+    - direction is recomputed from (x_end_norm, y_end_norm) → (opp_regain_x, opp_regain_y)
+    - only applies when the next opponent possession starts within max_gap_frames
     
     Examples
     --------
@@ -804,7 +1052,12 @@ def classify_pass_type(
         
         # Merge pass_type, pass_length, pass_direction from complete dataset
         # Match on unique identifiers to preserve all columns from input
-        merge_cols = ['pass_type', 'pass_length', 'pass_direction', 'pass_distance', 'dx', 'dy']
+        merge_cols = [
+            'pass_type', 'pass_length', 'pass_direction', 'pass_distance', 'dx', 'dy',
+            # Optional regain-proxy columns (present if the dataset was built with regain logic)
+            'team_switch_next', 'opp_regain_x', 'opp_regain_y', 'opp_regain_gap_frames',
+            'has_opp_regain_within_gap', 'dx_to_regain', 'dy_to_regain', 'dist_to_regain', 'angle_to_regain',
+        ]
         
         # Create merge key - prioritize unique IDs over composite keys
         # Strategy: Try single unique IDs first (action_id), then composite keys
@@ -888,6 +1141,63 @@ def classify_pass_type(
         
         # Combine into pass_type
         passes['pass_type'] = passes['pass_length'].astype(str) + '_' + passes['pass_direction'].astype(str)
+
+    # Optional: apply conservative direction-only override for unsuccessful passes.
+    # This keeps the 6-class schema intact and never changes predicted length.
+    if apply_unsuccessful_direction_override:
+        try:
+            # Ensure regain-proxy columns exist. Prefer using merged columns (if present);
+            # otherwise, compute a best-effort proxy from the available pass events.
+            needed_regain_cols = {'team_switch_next', 'opp_regain_x', 'opp_regain_y', 'opp_regain_gap_frames'}
+            if not needed_regain_cols.issubset(set(passes.columns)):
+                # Attempt to compute regain proxy from this DataFrame.
+                # NOTE: This is most accurate when `passes` is extracted from the full events
+                # stream *before* filtering to passes. If only pass rows are present, this is
+                # still a useful conservative approximation.
+                if {'match_id', 'period', 'team_id', 'frame_start', 'frame_end'}.issubset(set(passes.columns)):
+                    # Use normalized coordinates if available, else fall back to raw coordinates.
+                    x_start_col = 'x_start_norm' if 'x_start_norm' in passes.columns else 'x_start'
+                    y_start_col = 'y_start_norm' if 'y_start_norm' in passes.columns else 'y_start'
+                    x_end_col = 'x_end_norm' if 'x_end_norm' in passes.columns else 'x_end'
+                    y_end_col = 'y_end_norm' if 'y_end_norm' in passes.columns else 'y_end'
+
+                    passes = add_opponent_regain_proxy(
+                        passes,
+                        max_gap_frames=max_gap_frames,
+                        group_cols=('match_id', 'period'),
+                        sort_cols=('frame_start', 'frame_end'),
+                        x_start_col=x_start_col,
+                        y_start_col=y_start_col,
+                        x_end_col=x_end_col,
+                        y_end_col=y_end_col,
+                    )
+
+            # Apply override if we have the required columns.
+            needed_for_override = {
+                'pass_type', 'success',
+                'team_switch_next', 'opp_regain_x', 'opp_regain_y', 'opp_regain_gap_frames',
+            }
+            if needed_for_override.issubset(set(passes.columns)):
+                # Prefer normalized end coordinates if available.
+                x_end_col = 'x_end_norm' if 'x_end_norm' in passes.columns else 'x_end'
+                y_end_col = 'y_end_norm' if 'y_end_norm' in passes.columns else 'y_end'
+
+                if x_end_col in passes.columns and y_end_col in passes.columns:
+                    passes = override_predicted_pass_direction_only(
+                        passes,
+                        predicted_type_col='pass_type',
+                        output_col='pass_type',
+                        max_gap_frames=max_gap_frames,
+                        success_col='success',
+                        team_switch_col='team_switch_next',
+                        gap_col='opp_regain_gap_frames',
+                        x_end_col=x_end_col,
+                        y_end_col=y_end_col,
+                        opp_x_col='opp_regain_x',
+                        opp_y_col='opp_regain_y',
+                    )
+        except Exception as e:
+            print(f"⚠️  Direction override skipped due to error: {e}")
     
     # CRITICAL: Ensure pass_length and pass_direction are always present and consistent with pass_type
     # The merged data might have SkillCorner's original pass_direction values (sideway_left, sideway_right, None)
